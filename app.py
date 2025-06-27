@@ -1,6 +1,6 @@
 """
 HyperCLOVA X 기반 AI 투자 어드바이저
-Streamlit Cloud 배포용 버전
+Streamlit Cloud 배포용 안전 버전
 """
 
 import streamlit as st
@@ -108,82 +108,82 @@ class AIClient:
                 result = response.json()
                 return result['choices'][0]['message']['content']
             else:
-                return f"❌ API 호출 오류: {response.status_code}. 잠시 후 다시 시도해주세요."
+                return f"API 호출 오류: {response.status_code}. 잠시 후 다시 시도해주세요."
                 
         except Exception as e:
-            return f"❌ 오류가 발생했습니다: {str(e)}"
+            return f"오류가 발생했습니다: {str(e)}"
     
     def _get_mock_response(self, question: str) -> str:
         """API 키가 없을 때 모의 응답"""
         mock_responses = {
             "삼성전자": """
-📊 **삼성전자 투자 분석**
+📊 삼성전자 투자 분석
 
-**✅ 긍정적 요인:**
+✅ 긍정적 요인:
 • 메모리 반도체 업황 회복 신호
 • AI 반도체 수요 증가로 수혜 예상
 • 안정적인 배당 수익률 (약 2-3%)
 • 글로벌 기술주 대비 저평가 상태
 
-**⚠️ 주의할 점:**
+⚠️ 주의할 점:
 • 중국 경제 둔화 영향
 • 반도체 사이클의 변동성
 • 환율 변동 리스크
 
-**💡 투자 의견:**
+💡 투자 의견:
 중장기 관점에서 매력적인 투자처로 판단됩니다. 
 적립식 투자를 통한 분할 매수를 권장드립니다.
 
-*⚠️ 본 분석은 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.*
+⚠️ 본 분석은 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.
             """,
             
             "테슬라": """
-📊 **테슬라 투자 분석**
+📊 테슬라 투자 분석
 
-**✅ 성장 동력:**
+✅ 성장 동력:
 • 전기차 시장 선도 기업 지위
 • 자율주행 기술 발전
 • 에너지 저장 사업 확장
 • 슈퍼차저 네트워크 경쟁 우위
 
-**⚠️ 리스크 요인:**
+⚠️ 리스크 요인:
 • 높은 밸류에이션 (PER 60배 이상)
 • 중국 전기차 업체들과의 경쟁 심화
 • 일론 머스크 개인 리스크
 
-**💡 투자 의견:**
+💡 투자 의견:
 고위험 고수익을 추구하는 성장주 투자자에게 적합합니다.
 전체 포트폴리오의 5-10% 수준에서 고려해보세요.
 
-*⚠️ 본 분석은 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.*
+⚠️ 본 분석은 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.
             """,
             
             "default": """
-📊 **투자 가이드**
+📊 투자 가이드
 
-**💡 기본 투자 원칙:**
+💡 기본 투자 원칙:
 
-**1. 분산 투자**
+1. 분산 투자
 • 여러 종목, 섹터에 분산
 • 지역별 분산 (국내/해외)
 • 시간 분산 (적립식 투자)
 
-**2. 장기 투자**
+2. 장기 투자
 • 최소 3-5년 이상 투자 관점
 • 단기 변동성에 흔들리지 않기
 • 복리 효과 활용
 
-**3. 리스크 관리**
+3. 리스크 관리
 • 생활비 6개월분 비상금 확보
 • 투자 금액은 여유 자금으로만
 • 본인의 위험 허용도 파악
 
-**4. 지속적인 학습**
+4. 지속적인 학습
 • 기업 분석 능력 향상
 • 경제 흐름 이해
 • 투자 심리 관리
 
-*⚠️ 본 내용은 일반적인 정보 제공 목적이며, 개별 투자 권유가 아닙니다.*
+⚠️ 본 내용은 일반적인 정보 제공 목적이며, 개별 투자 권유가 아닙니다.
             """
         }
         
@@ -381,170 +381,7 @@ def main():
                         
                         st.warning("⚠️ **투자 주의사항:** 본 내용은 참고용이며, 실제 투자 결정은 충분한 검토 후 신중히 하시기 바랍니다.")
                 else:
-                    st.warning("⚠️ 뉴스를 불러올 수 없습니다. 잠시 후 다시 시도해주세요.")
-                    
-        except Exception as e:
-            st.error(f"❌ 뉴스 로딩 중 오류: {str(e)}")
-    
-    # 탭 4: 포트폴리오
-    with tab4:
-        st.markdown('<div class="section-header">포트폴리오 시뮬레이션</div>', unsafe_allow_html=True)
-        
-        st.markdown("**💼 나만의 포트폴리오를 구성해보세요**")
-        
-        # 포트폴리오 종목 선택
-        available_stocks = list(stock_data.stocks.keys())
-        selected_stocks = st.multiselect(
-            "포트폴리오에 포함할 종목을 선택하세요:",
-            available_stocks,
-            default=available_stocks[:4],
-            format_func=lambda x: f"{stock_data.stocks[x]['name']} ({x})"
-        )
-        
-        if selected_stocks:
-            st.markdown("### 📊 종목별 비중 설정")
-            
-            # 비중 설정
-            weights = {}
-            total_weight = 0
-            
-            cols = st.columns(len(selected_stocks))
-            for i, stock in enumerate(selected_stocks):
-                with cols[i]:
-                    weight = st.slider(
-                        f"{stock_data.stocks[stock]['name']}",
-                        min_value=0,
-                        max_value=100,
-                        value=100//len(selected_stocks),
-                        step=5,
-                        key=f"weight_{stock}"
-                    )
-                    weights[stock] = weight
-                    total_weight += weight
-            
-            # 비중 검증
-            st.markdown("---")
-            if abs(total_weight - 100) <= 5:
-                st.success(f"✅ 총 비중: {total_weight}% (포트폴리오 구성 완료)")
-                
-                # 포트폴리오 차트
-                if st.button("📊 포트폴리오 분석", type="primary"):
-                    # 파이 차트
-                    labels = [f"{stock_data.stocks[stock]['name']}\n({weight}%)" 
-                             for stock, weight in weights.items() if weight > 0]
-                    values = [weight for weight in weights.values() if weight > 0]
-                    
-                    fig_portfolio = go.Figure(data=[go.Pie(
-                        labels=labels,
-                        values=values,
-                        hole=0.4,
-                        textinfo='label+percent',
-                        textposition='outside'
-                    )])
-                    
-                    fig_portfolio.update_layout(
-                        title="💼 포트폴리오 구성",
-                        height=500,
-                        showlegend=True
-                    )
-                    
-                    st.plotly_chart(fig_portfolio, use_container_width=True)
-                    
-                    # 포트폴리오 성과 요약
-                    st.markdown("### 📈 포트폴리오 요약")
-                    
-                    total_value = 0
-                    total_change = 0
-                    
-                    portfolio_data = []
-                    for stock, weight in weights.items():
-                        if weight > 0:
-                            info = stock_data.get_stock_info(stock)
-                            value_contribution = (weight / 100) * info['price']
-                            change_contribution = (weight / 100) * info['change']
-                            total_value += value_contribution
-                            total_change += change_contribution
-                            
-                            portfolio_data.append({
-                                '종목': info['name'],
-                                '비중': f"{weight}%",
-                                '현재가': f"${info['price']:.2f}" if 'KS' not in stock else f"₩{info['price']:,.0f}",
-                                '등락': f"{info['change']:+.2f}" if 'KS' not in stock else f"{info['change']:+,.0f}",
-                                '기여도': f"{change_contribution:+.3f}"
-                            })
-                    
-                    # 포트폴리오 테이블
-                    df_portfolio = pd.DataFrame(portfolio_data)
-                    st.dataframe(df_portfolio, use_container_width=True, hide_index=True)
-                    
-                    # 포트폴리오 전체 성과
-                    portfolio_change_pct = (total_change / total_value) * 100 if total_value > 0 else 0
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("포트폴리오 변동", f"{total_change:+.2f}")
-                    with col2:
-                        st.metric("수익률", f"{portfolio_change_pct:+.2f}%")
-                    with col3:
-                        risk_level = "높음" if abs(portfolio_change_pct) > 3 else "중간" if abs(portfolio_change_pct) > 1 else "낮음"
-                        st.metric("위험도", risk_level)
-                    
-                    # 투자 조언
-                    st.markdown("### 💡 포트폴리오 조언")
-                    if portfolio_change_pct > 2:
-                        st.success("✅ 우수한 성과를 보이고 있습니다. 장기 보유를 고려해보세요.")
-                    elif portfolio_change_pct < -2:
-                        st.warning("⚠️ 단기적으로 부진합니다. 장기적 관점에서 접근하세요.")
-                    else:
-                        st.info("📊 안정적인 수익률을 보이고 있습니다.")
-                    
-            else:
-                st.error(f"❌ 총 비중이 {total_weight}%입니다. 100%에 맞춰주세요.")
-        
-        else:
-            st.info("💡 종목을 선택하여 포트폴리오를 구성해보세요.")
-        
-        # 투자 가이드
-        with st.expander("📚 포트폴리오 구성 가이드"):
-            st.markdown("""
-            ### 💡 효과적인 포트폴리오 구성 방법
-            
-            **1. 분산 투자 원칙**
-            - 서로 다른 섹터의 종목으로 구성
-            - 지역별 분산 (미국, 한국, 기타)
-            - 성장주와 가치주의 균형
-            
-            **2. 리스크 관리**
-            - 한 종목에 30% 이상 집중 지양
-            - 변동성이 큰 종목은 비중 조절
-            - 정기적인 리밸런싱 실시
-            
-            **3. 투자 성향별 권장 비중**
-            - **보수적**: 대형주 70% + 안전자산 30%
-            - **중도적**: 대형주 50% + 중소형주 30% + 안전자산 20%
-            - **공격적**: 성장주 60% + 중소형주 30% + 테마주 10%
-            
-            **⚠️ 주의사항**: 본 시뮬레이션은 교육 목적이며, 실제 투자는 충분한 검토 후 결정하세요.
-            """)
-
-# 푸터
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; padding: 2rem; background-color: #f8f9fa; border-radius: 10px; margin-top: 2rem;'>
-    <h4 style='color: #2c3e50; margin-bottom: 1rem;'>📈 HyperCLOVA X 기반 AI 투자 어드바이저</h4>
-    <p style='color: #666; margin-bottom: 0.5rem;'>
-        <strong>🤖 AI 기술:</strong> OpenAI GPT-3.5 Turbo | 
-        <strong>📊 데이터:</strong> 실시간 시뮬레이션 | 
-        <strong>📰 뉴스:</strong> RSS 피드
-    </p>
-    <p style='color: #e74c3c; font-weight: bold; margin: 0;'>
-        ⚠️ 본 서비스는 투자 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-if __name__ == "__main__":
-    main()❗ 질문을 입력해주세요.")
+                    st.warning("⚠️ 질문을 입력해주세요.")
         
         # 빠른 질문 버튼들
         st.markdown("---")
@@ -761,4 +598,167 @@ if __name__ == "__main__":
                                 if article['published']:
                                     st.caption(f"🕐 {article['published']}")
                 else:
-                    st.warning("
+                    st.warning("⚠️ 뉴스를 불러올 수 없습니다. 잠시 후 다시 시도해주세요.")
+                    
+        except Exception as e:
+            st.error(f"❌ 뉴스 로딩 중 오류: {str(e)}")
+    
+    # 탭 4: 포트폴리오
+    with tab4:
+        st.markdown('<div class="section-header">포트폴리오 시뮬레이션</div>', unsafe_allow_html=True)
+        
+        st.markdown("**💼 나만의 포트폴리오를 구성해보세요**")
+        
+        # 포트폴리오 종목 선택
+        available_stocks = list(stock_data.stocks.keys())
+        selected_stocks = st.multiselect(
+            "포트폴리오에 포함할 종목을 선택하세요:",
+            available_stocks,
+            default=available_stocks[:4],
+            format_func=lambda x: f"{stock_data.stocks[x]['name']} ({x})"
+        )
+        
+        if selected_stocks:
+            st.markdown("### 📊 종목별 비중 설정")
+            
+            # 비중 설정
+            weights = {}
+            total_weight = 0
+            
+            cols = st.columns(len(selected_stocks))
+            for i, stock in enumerate(selected_stocks):
+                with cols[i]:
+                    weight = st.slider(
+                        f"{stock_data.stocks[stock]['name']}",
+                        min_value=0,
+                        max_value=100,
+                        value=100//len(selected_stocks),
+                        step=5,
+                        key=f"weight_{stock}"
+                    )
+                    weights[stock] = weight
+                    total_weight += weight
+            
+            # 비중 검증
+            st.markdown("---")
+            if abs(total_weight - 100) <= 5:
+                st.success(f"✅ 총 비중: {total_weight}% (포트폴리오 구성 완료)")
+                
+                # 포트폴리오 차트
+                if st.button("📊 포트폴리오 분석", type="primary"):
+                    # 파이 차트
+                    labels = [f"{stock_data.stocks[stock]['name']}\n({weight}%)" 
+                             for stock, weight in weights.items() if weight > 0]
+                    values = [weight for weight in weights.values() if weight > 0]
+                    
+                    fig_portfolio = go.Figure(data=[go.Pie(
+                        labels=labels,
+                        values=values,
+                        hole=0.4,
+                        textinfo='label+percent',
+                        textposition='outside'
+                    )])
+                    
+                    fig_portfolio.update_layout(
+                        title="💼 포트폴리오 구성",
+                        height=500,
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig_portfolio, use_container_width=True)
+                    
+                    # 포트폴리오 성과 요약
+                    st.markdown("### 📈 포트폴리오 요약")
+                    
+                    total_value = 0
+                    total_change = 0
+                    
+                    portfolio_data = []
+                    for stock, weight in weights.items():
+                        if weight > 0:
+                            info = stock_data.get_stock_info(stock)
+                            value_contribution = (weight / 100) * info['price']
+                            change_contribution = (weight / 100) * info['change']
+                            total_value += value_contribution
+                            total_change += change_contribution
+                            
+                            portfolio_data.append({
+                                '종목': info['name'],
+                                '비중': f"{weight}%",
+                                '현재가': f"${info['price']:.2f}" if 'KS' not in stock else f"₩{info['price']:,.0f}",
+                                '등락': f"{info['change']:+.2f}" if 'KS' not in stock else f"{info['change']:+,.0f}",
+                                '기여도': f"{change_contribution:+.3f}"
+                            })
+                    
+                    # 포트폴리오 테이블
+                    df_portfolio = pd.DataFrame(portfolio_data)
+                    st.dataframe(df_portfolio, use_container_width=True, hide_index=True)
+                    
+                    # 포트폴리오 전체 성과
+                    portfolio_change_pct = (total_change / total_value) * 100 if total_value > 0 else 0
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("포트폴리오 변동", f"{total_change:+.2f}")
+                    with col2:
+                        st.metric("수익률", f"{portfolio_change_pct:+.2f}%")
+                    with col3:
+                        risk_level = "높음" if abs(portfolio_change_pct) > 3 else "중간" if abs(portfolio_change_pct) > 1 else "낮음"
+                        st.metric("위험도", risk_level)
+                    
+                    # 투자 조언
+                    st.markdown("### 💡 포트폴리오 조언")
+                    if portfolio_change_pct > 2:
+                        st.success("✅ 우수한 성과를 보이고 있습니다. 장기 보유를 고려해보세요.")
+                    elif portfolio_change_pct < -2:
+                        st.warning("⚠️ 단기적으로 부진합니다. 장기적 관점에서 접근하세요.")
+                    else:
+                        st.info("📊 안정적인 수익률을 보이고 있습니다.")
+                    
+            else:
+                st.error(f"❌ 총 비중이 {total_weight}%입니다. 100%에 맞춰주세요.")
+        
+        else:
+            st.info("💡 종목을 선택하여 포트폴리오를 구성해보세요.")
+        
+        # 투자 가이드
+        with st.expander("📚 포트폴리오 구성 가이드"):
+            st.markdown("""
+            ### 💡 효과적인 포트폴리오 구성 방법
+            
+            **1. 분산 투자 원칙**
+            - 서로 다른 섹터의 종목으로 구성
+            - 지역별 분산 (미국, 한국, 기타)
+            - 성장주와 가치주의 균형
+            
+            **2. 리스크 관리**
+            - 한 종목에 30% 이상 집중 지양
+            - 변동성이 큰 종목은 비중 조절
+            - 정기적인 리밸런싱 실시
+            
+            **3. 투자 성향별 권장 비중**
+            - **보수적**: 대형주 70% + 안전자산 30%
+            - **중도적**: 대형주 50% + 중소형주 30% + 안전자산 20%
+            - **공격적**: 성장주 60% + 중소형주 30% + 테마주 10%
+            
+            **⚠️ 주의사항**: 본 시뮬레이션은 교육 목적이며, 실제 투자는 충분한 검토 후 결정하세요.
+            """)
+
+    # 푸터
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; padding: 2rem; background-color: #f8f9fa; border-radius: 10px; margin-top: 2rem;'>
+        <h4 style='color: #2c3e50; margin-bottom: 1rem;'>📈 HyperCLOVA X 기반 AI 투자 어드바이저</h4>
+        <p style='color: #666; margin-bottom: 0.5rem;'>
+            <strong>🤖 AI 기술:</strong> OpenAI GPT-3.5 Turbo | 
+            <strong>📊 데이터:</strong> 실시간 시뮬레이션 | 
+            <strong>📰 뉴스:</strong> RSS 피드
+        </p>
+        <p style='color: #e74c3c; font-weight: bold; margin: 0;'>
+            ⚠️ 본 서비스는 투자 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()
