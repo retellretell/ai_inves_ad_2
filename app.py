@@ -1,117 +1,83 @@
+"""
+HyperCLOVA X 기반 AI 투자 어드바이저
+Streamlit Cloud 배포용 버전
+"""
+
 import streamlit as st
-import requests
-import yfinance as yf
+import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-import pandas as pd
-import json
-import os
-from datetime import datetime, timedelta
+import requests
+import random
 import feedparser
-from dotenv import load_dotenv
-import time
-import logging
+from datetime import datetime, timedelta
+import json
 
-# 로깅 설정
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# 페이지 설정
+st.set_page_config(
+    page_title="HyperCLOVA X 기반 AI 투자 어드바이저",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# 환경변수 로드
-load_dotenv()
+# API 키 설정 (Streamlit Secrets에서 읽기)
+def get_api_key():
+    """Streamlit Secrets에서 API 키 가져오기"""
+    try:
+        return st.secrets["OPENAI_API_KEY"]
+    except:
+        return None
 
-# ================================
-# 환경 설정 및 API 키 관리
-# ================================
+# 스타일 설정
+st.markdown("""
+<style>
+.main-header {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #1f77b4;
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.section-header {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+}
+.info-box {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border-left: 4px solid #1f77b4;
+    margin: 1rem 0;
+}
+.metric-card {
+    background-color: #ffffff;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border: 1px solid #e0e0e0;
+    text-align: center;
+}
+</style>
+""", unsafe_allow_html=True)
 
-class Config:
-    """환경 설정 클래스"""
-    
-    # HyperCLOVA X API 설정
-    HYPERCLOVA_API_KEY = os.getenv('HYPERCLOVA_API_KEY', '')
-    HYPERCLOVA_API_URL = os.getenv('HYPERCLOVA_API_URL', 'https://clovastudio.stream.ntruss.com/testapp/v1/chat-completions/HCX-DASH-001')
-    
-    # OpenAI API 설정 (HyperCLOVA X 실패시 대체)
-    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-    OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
-    
-    # 뉴스 API 설정
-    NEWS_API_KEY = os.getenv('NEWS_API_KEY', '')
-    NEWS_API_URL = 'https://newsapi.org/v2/everything'
-    
-    # Alpha Vantage API (ESG 데이터용)
-    ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY', '')
-    
-    # 기본 설정
-    DEFAULT_STOCKS = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'NVDA']
-    MAX_RETRIES = 3
-    TIMEOUT = 30
-
-# ================================
-# API 통신 클래스
-# ================================
-
-class LLMClient:
-    """LLM API 클라이언트"""
-    
+# AI API 클라이언트 클래스
+class AIClient:
     def __init__(self):
-        self.config = Config()
+        self.api_key = get_api_key()
+        self.api_url = "https://api.openai.com/v1/chat/completions"
     
-    def call_hyperclova_x(self, prompt: str) -> str:
-        """HyperCLOVA X API 호출"""
+    def get_response(self, question: str) -> str:
+        """AI 응답 생성"""
+        if not self.api_key:
+            return self._get_mock_response(question)
+        
         try:
-            if not self.config.HYPERCLOVA_API_KEY:
-                raise ValueError("HyperCLOVA X API 키가 설정되지 않았습니다.")
-            
             headers = {
-                'X-NCP-CLOVASTUDIO-API-KEY': self.config.HYPERCLOVA_API_KEY,
-                'X-NCP-APIGW-API-KEY': self.config.HYPERCLOVA_API_KEY,
-                'Content-Type': 'application/json'
-            }
-            
-            payload = {
-                'messages': [
-                    {
-                        'role': 'system',
-                        'content': '당신은 전문적인 투자 어드바이저입니다. 정확하고 유용한 투자 정보를 제공해주세요.'
-                    },
-                    {
-                        'role': 'user',
-                        'content': prompt
-                    }
-                ],
-                'topP': 0.8,
-                'topK': 0,
-                'maxTokens': 1000,
-                'temperature': 0.3,
-                'repeatPenalty': 1.2,
-                'includeAiFilters': True
-            }
-            
-            response = requests.post(
-                self.config.HYPERCLOVA_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=self.config.TIMEOUT
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result.get('result', {}).get('message', {}).get('content', '응답을 생성할 수 없습니다.')
-            else:
-                raise Exception(f"API 호출 실패: {response.status_code}")
-                
-        except Exception as e:
-            logger.error(f"HyperCLOVA X API 오류: {str(e)}")
-            raise e
-    
-    def call_openai(self, prompt: str) -> str:
-        """OpenAI API 호출 (대체 수단)"""
-        try:
-            if not self.config.OPENAI_API_KEY:
-                raise ValueError("OpenAI API 키가 설정되지 않았습니다.")
-            
-            headers = {
-                'Authorization': f'Bearer {self.config.OPENAI_API_KEY}',
+                'Authorization': f'Bearer {self.api_key}',
                 'Content-Type': 'application/json'
             }
             
@@ -120,132 +86,181 @@ class LLMClient:
                 'messages': [
                     {
                         'role': 'system',
-                        'content': '당신은 전문적인 투자 어드바이저입니다. 정확하고 유용한 투자 정보를 제공해주세요.'
+                        'content': '당신은 전문적인 투자 어드바이저입니다. 한국어로 정확하고 유용한 투자 정보를 제공해주세요. 답변은 구체적이고 실용적으로 해주세요.'
                     },
                     {
                         'role': 'user',
-                        'content': prompt
+                        'content': question
                     }
                 ],
-                'max_tokens': 1000,
+                'max_tokens': 1500,
                 'temperature': 0.3
             }
             
             response = requests.post(
-                self.config.OPENAI_API_URL,
+                self.api_url,
                 headers=headers,
                 json=payload,
-                timeout=self.config.TIMEOUT
+                timeout=30
             )
             
             if response.status_code == 200:
                 result = response.json()
                 return result['choices'][0]['message']['content']
             else:
-                raise Exception(f"API 호출 실패: {response.status_code}")
+                return f"❌ API 호출 오류: {response.status_code}. 잠시 후 다시 시도해주세요."
                 
         except Exception as e:
-            logger.error(f"OpenAI API 오류: {str(e)}")
-            raise e
+            return f"❌ 오류가 발생했습니다: {str(e)}"
     
-    def get_ai_response(self, prompt: str) -> str:
-        """AI 응답 생성 (HyperCLOVA X 우선, 실패시 OpenAI)"""
-        try:
-            # HyperCLOVA X 우선 시도
-            return self.call_hyperclova_x(prompt)
-        except Exception as e:
-            st.warning(f"HyperCLOVA X 연결 실패: {str(e)}")
-            try:
-                # OpenAI로 대체
-                st.info("OpenAI API로 대체하여 응답을 생성합니다...")
-                return self.call_openai(prompt)
-            except Exception as e2:
-                st.error(f"모든 AI API 연결 실패: {str(e2)}")
-                return "죄송합니다. 현재 AI 서비스에 연결할 수 없습니다. API 키 설정을 확인해주세요."
+    def _get_mock_response(self, question: str) -> str:
+        """API 키가 없을 때 모의 응답"""
+        mock_responses = {
+            "삼성전자": """
+📊 **삼성전자 투자 분석**
 
-# ================================
-# 데이터 수집 클래스
-# ================================
+**✅ 긍정적 요인:**
+• 메모리 반도체 업황 회복 신호
+• AI 반도체 수요 증가로 수혜 예상
+• 안정적인 배당 수익률 (약 2-3%)
+• 글로벌 기술주 대비 저평가 상태
 
-class DataCollector:
-    """실제 데이터 수집 클래스"""
-    
+**⚠️ 주의할 점:**
+• 중국 경제 둔화 영향
+• 반도체 사이클의 변동성
+• 환율 변동 리스크
+
+**💡 투자 의견:**
+중장기 관점에서 매력적인 투자처로 판단됩니다. 
+적립식 투자를 통한 분할 매수를 권장드립니다.
+
+*⚠️ 본 분석은 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.*
+            """,
+            
+            "테슬라": """
+📊 **테슬라 투자 분석**
+
+**✅ 성장 동력:**
+• 전기차 시장 선도 기업 지위
+• 자율주행 기술 발전
+• 에너지 저장 사업 확장
+• 슈퍼차저 네트워크 경쟁 우위
+
+**⚠️ 리스크 요인:**
+• 높은 밸류에이션 (PER 60배 이상)
+• 중국 전기차 업체들과의 경쟁 심화
+• 일론 머스크 개인 리스크
+
+**💡 투자 의견:**
+고위험 고수익을 추구하는 성장주 투자자에게 적합합니다.
+전체 포트폴리오의 5-10% 수준에서 고려해보세요.
+
+*⚠️ 본 분석은 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.*
+            """,
+            
+            "default": """
+📊 **투자 가이드**
+
+**💡 기본 투자 원칙:**
+
+**1. 분산 투자**
+• 여러 종목, 섹터에 분산
+• 지역별 분산 (국내/해외)
+• 시간 분산 (적립식 투자)
+
+**2. 장기 투자**
+• 최소 3-5년 이상 투자 관점
+• 단기 변동성에 흔들리지 않기
+• 복리 효과 활용
+
+**3. 리스크 관리**
+• 생활비 6개월분 비상금 확보
+• 투자 금액은 여유 자금으로만
+• 본인의 위험 허용도 파악
+
+**4. 지속적인 학습**
+• 기업 분석 능력 향상
+• 경제 흐름 이해
+• 투자 심리 관리
+
+*⚠️ 본 내용은 일반적인 정보 제공 목적이며, 개별 투자 권유가 아닙니다.*
+            """
+        }
+        
+        question_lower = question.lower()
+        if any(keyword in question for keyword in ["삼성", "samsung", "005930"]):
+            return mock_responses["삼성전자"]
+        elif any(keyword in question_lower for keyword in ["테슬라", "tesla", "tsla"]):
+            return mock_responses["테슬라"]
+        else:
+            return mock_responses["default"]
+
+# 주식 데이터 클래스
+class StockData:
     def __init__(self):
-        self.config = Config()
+        # 주요 주식 종목 데이터 (실시간 데이터 시뮬레이션)
+        self.stocks = {
+            'AAPL': {'name': '애플', 'price': 175.23, 'change': 2.45, 'volume': 45000000},
+            'GOOGL': {'name': '구글', 'price': 140.67, 'change': -1.23, 'volume': 28000000},
+            'MSFT': {'name': '마이크로소프트', 'price': 378.91, 'change': 4.56, 'volume': 32000000},
+            'TSLA': {'name': '테슬라', 'price': 248.48, 'change': -3.21, 'volume': 95000000},
+            'NVDA': {'name': '엔비디아', 'price': 456.78, 'change': 12.34, 'volume': 67000000},
+            '005930.KS': {'name': '삼성전자', 'price': 75000, 'change': 1000, 'volume': 12000000},
+            '000660.KS': {'name': 'SK하이닉스', 'price': 128000, 'change': -2000, 'volume': 8500000}
+        }
     
-    def get_stock_data(self, symbol: str, period: str = "1y") -> pd.DataFrame:
-        """실제 주식 데이터 수집"""
-        try:
-            stock = yf.Ticker(symbol)
-            data = stock.history(period=period)
-            if data.empty:
-                raise ValueError(f"'{symbol}' 종목 데이터를 찾을 수 없습니다.")
-            return data
-        except Exception as e:
-            logger.error(f"주식 데이터 수집 오류 ({symbol}): {str(e)}")
-            raise e
+    def get_stock_info(self, symbol):
+        """주식 정보 반환"""
+        if symbol in self.stocks:
+            stock = self.stocks[symbol].copy()
+            # 실시간 가격 변동 시뮬레이션
+            change_pct = random.uniform(-2, 2)
+            stock['price'] *= (1 + change_pct/100)
+            stock['change'] += stock['price'] * (change_pct/100)
+            return stock
+        return None
     
-    def get_stock_info(self, symbol: str) -> dict:
-        """주식 기본 정보 수집"""
-        try:
-            stock = yf.Ticker(symbol)
-            info = stock.info
-            return {
-                'name': info.get('longName', symbol),
-                'sector': info.get('sector', 'N/A'),
-                'industry': info.get('industry', 'N/A'),
-                'marketCap': info.get('marketCap', 0),
-                'pe_ratio': info.get('forwardPE', 0),
-                'dividend_yield': info.get('dividendYield', 0)
-            }
-        except Exception as e:
-            logger.error(f"주식 정보 수집 오류 ({symbol}): {str(e)}")
-            return {'name': symbol, 'sector': 'N/A', 'industry': 'N/A', 'marketCap': 0, 'pe_ratio': 0, 'dividend_yield': 0}
-    
-    def get_financial_news(self, query: str = "stock market", limit: int = 10) -> list:
-        """실제 금융 뉴스 수집"""
-        try:
-            # NewsAPI를 우선 시도
-            if self.config.NEWS_API_KEY:
-                return self._get_news_from_api(query, limit)
-            else:
-                # 무료 RSS 피드 사용
-                return self._get_news_from_rss(limit)
-        except Exception as e:
-            logger.error(f"뉴스 수집 오류: {str(e)}")
-            return []
-    
-    def _get_news_from_api(self, query: str, limit: int) -> list:
-        """NewsAPI에서 뉴스 수집"""
-        try:
-            params = {
-                'q': query,
-                'language': 'en',
-                'sortBy': 'publishedAt',
-                'pageSize': limit,
-                'apiKey': self.config.NEWS_API_KEY
-            }
+    def generate_chart_data(self, symbol, days=30):
+        """차트 데이터 생성"""
+        if symbol not in self.stocks:
+            return None
+        
+        base_price = self.stocks[symbol]['price']
+        dates = pd.date_range(end=datetime.now(), periods=days, freq='D')
+        prices = []
+        volumes = []
+        
+        current_price = base_price * 0.9  # 시작 가격
+        
+        for _ in range(days):
+            # 가격 변동
+            change = random.uniform(-0.05, 0.05)
+            current_price *= (1 + change)
+            prices.append(current_price)
             
-            response = requests.get(self.config.NEWS_API_URL, params=params, timeout=self.config.TIMEOUT)
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data.get('articles', [])
-            else:
-                raise Exception(f"NewsAPI 오류: {response.status_code}")
-                
-        except Exception as e:
-            logger.error(f"NewsAPI 오류: {str(e)}")
-            return []
+            # 거래량 변동
+            base_volume = self.stocks[symbol]['volume']
+            volume = base_volume * random.uniform(0.5, 1.5)
+            volumes.append(int(volume))
+        
+        return pd.DataFrame({
+            'Date': dates,
+            'Price': prices,
+            'Volume': volumes
+        })
+
+# 뉴스 데이터 클래스
+class NewsData:
+    def __init__(self):
+        pass
     
-    def _get_news_from_rss(self, limit: int) -> list:
-        """RSS 피드에서 뉴스 수집"""
+    def get_financial_news(self, limit=10):
+        """금융 뉴스 가져오기"""
         try:
-            # 무료 금융 뉴스 RSS 피드들
+            # Reuters 비즈니스 뉴스 RSS
             rss_urls = [
-                'https://feeds.finance.yahoo.com/rss/2.0/headline',
-                'https://www.cnbc.com/id/100003114/device/rss/rss.html',
-                'https://www.reuters.com/markets/rss'
+                'https://feeds.reuters.com/reuters/businessNews',
+                'https://feeds.finance.yahoo.com/rss/2.0/headline'
             ]
             
             articles = []
@@ -257,659 +272,330 @@ class DataCollector:
                             'title': entry.get('title', ''),
                             'description': entry.get('summary', ''),
                             'url': entry.get('link', ''),
-                            'publishedAt': entry.get('published', ''),
-                            'source': {'name': feed.feed.get('title', 'RSS Feed')}
+                            'published': entry.get('published', ''),
+                            'source': feed.feed.get('title', 'RSS Feed')
                         })
-                except Exception as e:
-                    logger.error(f"RSS 피드 오류 ({url}): {str(e)}")
+                except:
                     continue
             
             return articles[:limit]
-            
-        except Exception as e:
-            logger.error(f"RSS 뉴스 수집 오류: {str(e)}")
-            return []
+        
+        except:
+            return self._get_sample_news()
     
-    def get_esg_data(self, symbol: str) -> dict:
-        """ESG 데이터 수집 (시뮬레이션)"""
-        try:
-            # 실제 ESG API가 있다면 여기서 호출
-            # 현재는 yfinance에서 가능한 정보만 수집
-            stock = yf.Ticker(symbol)
-            info = stock.info
-            
-            # ESG 관련 정보 추출 (제한적)
-            esg_data = {
-                'esg_score': info.get('totalEsgScore', 0),
-                'environment_score': info.get('environmentScore', 0),
-                'social_score': info.get('socialScore', 0),
-                'governance_score': info.get('governanceScore', 0),
-                'controversy_level': info.get('highestControversy', 0),
-                'last_updated': datetime.now().strftime('%Y-%m-%d')
+    def _get_sample_news(self):
+        """샘플 뉴스 데이터"""
+        return [
+            {
+                'title': '미국 증시, 기술주 강세로 상승 마감',
+                'description': 'AI 관련 기술주들이 강세를 보이며 나스닥이 1.2% 상승했습니다.',
+                'url': '#',
+                'published': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                'source': '샘플 뉴스'
+            },
+            {
+                'title': '연준, 금리 동결 신호 지속',
+                'description': '연방준비제도가 현재 금리 수준을 당분간 유지할 것으로 전망됩니다.',
+                'url': '#',
+                'published': (datetime.now() - timedelta(hours=2)).strftime('%Y-%m-%d %H:%M'),
+                'source': '샘플 뉴스'
             }
-            
-            return esg_data
-            
-        except Exception as e:
-            logger.error(f"ESG 데이터 수집 오류 ({symbol}): {str(e)}")
-            return {
-                'esg_score': 0,
-                'environment_score': 0,
-                'social_score': 0,
-                'governance_score': 0,
-                'controversy_level': 0,
-                'last_updated': datetime.now().strftime('%Y-%m-%d')
-            }
+        ]
 
-# ================================
-# 시각화 클래스
-# ================================
-
-class ChartGenerator:
-    """차트 생성 클래스"""
-    
-    @staticmethod
-    def create_stock_chart(data: pd.DataFrame, symbol: str) -> go.Figure:
-        """주식 차트 생성"""
-        try:
-            fig = go.Figure()
-            
-            # 캔들스틱 차트
-            fig.add_trace(go.Candlestick(
-                x=data.index,
-                open=data['Open'],
-                high=data['High'],
-                low=data['Low'],
-                close=data['Close'],
-                name=symbol
-            ))
-            
-            # 거래량 추가
-            fig.add_trace(go.Scatter(
-                x=data.index,
-                y=data['Volume'],
-                mode='lines',
-                name='Volume',
-                yaxis='y2',
-                line=dict(color='rgba(0,100,80,0.8)')
-            ))
-            
-            fig.update_layout(
-                title=f'{symbol} 주가 차트',
-                xaxis_title='날짜',
-                yaxis_title='주가 (USD)',
-                yaxis2=dict(
-                    title='거래량',
-                    overlaying='y',
-                    side='right'
-                ),
-                template='plotly_white',
-                height=600
-            )
-            
-            return fig
-            
-        except Exception as e:
-            logger.error(f"차트 생성 오류: {str(e)}")
-            raise e
-    
-    @staticmethod
-    def create_portfolio_chart(portfolio_data: dict) -> go.Figure:
-        """포트폴리오 차트 생성"""
-        try:
-            symbols = list(portfolio_data.keys())
-            values = list(portfolio_data.values())
-            
-            fig = go.Figure(data=[go.Pie(
-                labels=symbols,
-                values=values,
-                hole=0.3
-            )])
-            
-            fig.update_layout(
-                title='포트폴리오 구성',
-                template='plotly_white',
-                height=500
-            )
-            
-            return fig
-            
-        except Exception as e:
-            logger.error(f"포트폴리오 차트 생성 오류: {str(e)}")
-            raise e
-    
-    @staticmethod
-    def create_esg_chart(esg_data: dict) -> go.Figure:
-        """ESG 차트 생성"""
-        try:
-            categories = ['Environment', 'Social', 'Governance']
-            scores = [
-                esg_data.get('environment_score', 0),
-                esg_data.get('social_score', 0),
-                esg_data.get('governance_score', 0)
-            ]
-            
-            fig = go.Figure(data=[
-                go.Bar(x=categories, y=scores, marker_color=['green', 'blue', 'orange'])
-            ])
-            
-            fig.update_layout(
-                title='ESG 점수',
-                xaxis_title='ESG 카테고리',
-                yaxis_title='점수',
-                yaxis=dict(range=[0, 100]),
-                template='plotly_white',
-                height=400
-            )
-            
-            return fig
-            
-        except Exception as e:
-            logger.error(f"ESG 차트 생성 오류: {str(e)}")
-            raise e
-
-# ================================
 # 메인 애플리케이션
-# ================================
-
 def main():
-    """메인 애플리케이션"""
-    
-    # 페이지 설정
-    st.set_page_config(
-        page_title="HyperCLOVA X 기반 AI 투자 어드바이저",
-        page_icon="📈",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
-    # 스타일 설정
-    st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .section-header {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #2c3e50;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
-    }
-    .info-box {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #1f77b4;
-        margin: 1rem 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
     # 헤더
     st.markdown('<div class="main-header">📈 HyperCLOVA X 기반 AI 투자 어드바이저</div>', unsafe_allow_html=True)
     
     # 클라이언트 초기화
-    llm_client = LLMClient()
-    data_collector = DataCollector()
-    chart_generator = ChartGenerator()
+    ai_client = AIClient()
+    stock_data = StockData()
+    news_data = NewsData()
     
-    # 사이드바 - 설정
+    # 사이드바
     with st.sidebar:
-        st.header("⚙️ 설정")
+        st.header("⚙️ 시스템 상태")
         
         # API 상태 확인
-        st.subheader("API 상태")
-        hyperclova_status = "✅ 연결됨" if Config.HYPERCLOVA_API_KEY else "❌ 미설정"
-        openai_status = "✅ 연결됨" if Config.OPENAI_API_KEY else "❌ 미설정"
-        news_status = "✅ 연결됨" if Config.NEWS_API_KEY else "⚠️ RSS 사용"
+        api_status = "✅ 연결됨" if ai_client.api_key else "❌ 미설정"
+        st.write(f"**OpenAI API:** {api_status}")
         
-        st.write(f"HyperCLOVA X: {hyperclova_status}")
-        st.write(f"OpenAI: {openai_status}")
-        st.write(f"뉴스 API: {news_status}")
-        
-        # 설정 가이드
-        with st.expander("API 키 설정 가이드"):
-            st.write("""
-            **환경변수 설정 방법:**
-            
-            1. `.env` 파일 생성:
+        if not ai_client.api_key:
+            st.warning("⚠️ API 키가 설정되지 않았습니다.")
+            st.info("""
+            **Streamlit Cloud 설정 방법:**
+            1. 앱 설정(⚙️) → Secrets 탭
+            2. 다음 내용 추가:
             ```
-            HYPERCLOVA_API_KEY=your_key_here
-            OPENAI_API_KEY=your_key_here
-            NEWS_API_KEY=your_key_here
+            OPENAI_API_KEY = "your-api-key"
             ```
-            
-            2. Streamlit Secrets 사용:
-            `.streamlit/secrets.toml` 파일 생성
-            
-            3. 시스템 환경변수 설정
             """)
+        else:
+            st.success("🚀 AI 상담 서비스 이용 가능!")
+        
+        st.markdown("---")
+        
+        # 실시간 시계
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.caption(f"🕐 현재 시간: {current_time}")
+        
+        # 시장 상태
+        now = datetime.now()
+        if 9 <= now.hour < 16:
+            st.success("🟢 미국 시장 개장 중")
+        else:
+            st.info("🔴 미국 시장 마감")
     
     # 메인 탭
-    tab1, tab2, tab3, tab4 = st.tabs(["💬 AI 상담", "📊 시장 분석", "🌱 ESG 분석", "📰 뉴스"])
+    tab1, tab2, tab3, tab4 = st.tabs(["💬 AI 투자 상담", "📊 주식 분석", "📰 금융 뉴스", "💼 포트폴리오"])
     
-    # 탭 1: AI 상담
+    # 탭 1: AI 투자 상담
     with tab1:
         st.markdown('<div class="section-header">AI 투자 상담</div>', unsafe_allow_html=True)
         
         # 질문 입력
         user_question = st.text_area(
-            "투자 관련 질문을 입력하세요:",
-            placeholder="예: 삼성전자 주식 전망은 어떤가요? 또는 달러 환율 전망을 알려주세요.",
-            height=100
+            "💭 투자 관련 질문을 입력하세요:",
+            placeholder="예: 삼성전자 주식 어떻게 생각하세요? 또는 초보자 투자 전략을 알려주세요.",
+            height=120
         )
         
+        # 상담 버튼
         col1, col2 = st.columns([1, 4])
         with col1:
-            if st.button("💡 AI 상담", type="primary"):
+            if st.button("🤖 AI 상담 시작", type="primary", use_container_width=True):
                 if user_question.strip():
-                    with st.spinner("AI가 답변을 생성하고 있습니다..."):
-                        try:
-                            # AI 응답 생성
-                            response = llm_client.get_ai_response(user_question)
-                            
-                            # 응답 표시
-                            st.markdown('<div class="info-box">', unsafe_allow_html=True)
-                            st.markdown("**🤖 AI 투자 어드바이저 답변:**")
-                            st.write(response)
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            
-                            # 주의사항 표시
-                            st.warning("⚠️ 본 내용은 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.")
-                            
-                        except Exception as e:
-                            st.error(f"AI 상담 중 오류가 발생했습니다: {str(e)}")
+                    with st.spinner("AI 투자 어드바이저가 분석 중입니다..."):
+                        # AI 응답 생성
+                        response = ai_client.get_response(user_question)
+                        
+                        # 응답 표시
+                        st.markdown("---")
+                        st.markdown("### 🤖 AI 투자 어드바이저 답변")
+                        st.markdown('<div class="info-box">', unsafe_allow_html=True)
+                        st.markdown(response)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        if not ai_client.api_key:
+                            st.info("💡 **실제 AI 답변을 받으려면** 왼쪽 사이드바의 안내에 따라 API 키를 설정하세요!")
+                        
+                        st.warning("⚠️ **투자 주의사항:** 본 내용은 참고용이며, 실제 투자 결정은 충분한 검토 후 신중히 하시기 바랍니다.")
                 else:
-                    st.warning("질문을 입력해주세요.")
+                    st.warning("❗ 질문을 입력해주세요.")
         
-        # 샘플 질문
-        st.markdown("**💡 샘플 질문:**")
-        sample_questions = [
-            "테슬라 주식의 장단기 전망은?",
-            "반도체 섹터 투자 전략을 추천해주세요",
-            "달러 강세가 한국 주식시장에 미치는 영향은?",
-            "ESG 투자의 장단점을 설명해주세요"
+        # 빠른 질문 버튼들
+        st.markdown("---")
+        st.markdown("### 💡 빠른 질문")
+        
+        quick_questions = [
+            "삼성전자 주식 전망은?",
+            "테슬라 투자 어떻게 생각하세요?",
+            "초보자 투자 전략 알려주세요",
+            "ESG 투자가 뭔가요?",
+            "지금 금리 상황에서 어떻게 투자해야 할까요?",
+            "반도체 주식 전망은?"
         ]
         
-        for i, question in enumerate(sample_questions):
-            if st.button(f"📝 {question}", key=f"sample_q_{i}"):
-                st.text_area("투자 관련 질문을 입력하세요:", value=question, key=f"filled_q_{i}")
+        cols = st.columns(3)
+        for i, question in enumerate(quick_questions):
+            with cols[i % 3]:
+                if st.button(question, key=f"quick_q_{i}", use_container_width=True):
+                    # 세션 상태에 질문 저장
+                    st.session_state.quick_question = question
+                    st.rerun()
+        
+        # 빠른 질문이 선택되었을 때 처리
+        if hasattr(st.session_state, 'quick_question'):
+            selected_question = st.session_state.quick_question
+            st.text_area("💭 투자 관련 질문을 입력하세요:", value=selected_question, key="filled_question")
+            del st.session_state.quick_question
     
-    # 탭 2: 시장 분석
+    # 탭 2: 주식 분석
     with tab2:
-        st.markdown('<div class="section-header">실시간 시장 분석</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">주식 시장 분석</div>', unsafe_allow_html=True)
         
         # 종목 선택
         col1, col2 = st.columns([2, 1])
         with col1:
-            symbol = st.selectbox(
-                "분석할 종목을 선택하세요:",
-                Config.DEFAULT_STOCKS + ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX'],
-                index=0
+            selected_symbol = st.selectbox(
+                "📈 분석할 종목을 선택하세요:",
+                list(stock_data.stocks.keys()),
+                format_func=lambda x: f"{stock_data.stocks[x]['name']} ({x})"
             )
         
         with col2:
-            period = st.selectbox(
-                "기간:",
-                ["1mo", "3mo", "6mo", "1y", "2y"],
-                index=3
-            )
+            chart_period = st.selectbox("📅 차트 기간:", [7, 14, 30, 60], index=2)
         
-        if st.button("📊 분석 시작", type="primary"):
-            try:
-                with st.spinner("시장 데이터를 분석하고 있습니다..."):
-                    # 주식 데이터 수집
-                    stock_data = data_collector.get_stock_data(symbol, period)
-                    stock_info = data_collector.get_stock_info(symbol)
+        if selected_symbol:
+            stock_info = stock_data.get_stock_info(selected_symbol)
+            
+            if stock_info:
+                # 주식 정보 카드
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h4>{stock_info['name']}</h4>
+                        <p style="color: #666; margin: 0;">{selected_symbol}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    price = stock_info['price']
+                    change = stock_info['change']
+                    change_pct = (change / price) * 100
+                    color = "#4CAF50" if change > 0 else "#F44336" if change < 0 else "#666"
                     
-                    # 기본 정보 표시
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("종목명", stock_info['name'])
-                    with col2:
-                        current_price = stock_data['Close'].iloc[-1]
-                        prev_price = stock_data['Close'].iloc[-2]
-                        change = current_price - prev_price
-                        change_pct = (change / prev_price) * 100
-                        st.metric("현재가", f"${current_price:.2f}", f"{change:+.2f} ({change_pct:+.2f}%)")
-                    with col3:
-                        st.metric("섹터", stock_info['sector'])
-                    with col4:
-                        market_cap = stock_info['marketCap']
-                        if market_cap > 1e12:
-                            market_cap_str = f"${market_cap/1e12:.2f}T"
-                        elif market_cap > 1e9:
-                            market_cap_str = f"${market_cap/1e9:.2f}B"
-                        else:
-                            market_cap_str = f"${market_cap/1e6:.2f}M"
-                        st.metric("시가총액", market_cap_str)
+                    if 'KS' in selected_symbol:
+                        price_str = f"₩{price:,.0f}"
+                        change_str = f"{change:+,.0f}원 ({change_pct:+.2f}%)"
+                    else:
+                        price_str = f"${price:.2f}"
+                        change_str = f"${change:+.2f} ({change_pct:+.2f}%)"
                     
-                    # 차트 생성
-                    chart = chart_generator.create_stock_chart(stock_data, symbol)
-                    st.plotly_chart(chart, use_container_width=True)
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h4>현재가</h4>
+                        <h3 style="margin: 5px 0;">{price_str}</h3>
+                        <p style="color: {color}; margin: 0; font-weight: bold;">{change_str}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col3:
+                    volume_str = f"{stock_info['volume']:,}"
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h4>거래량</h4>
+                        <h3 style="margin: 5px 0;">{volume_str}</h3>
+                        <p style="color: #666; margin: 0;">주</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col4:
+                    trend = "상승" if change > 0 else "하락" if change < 0 else "보합"
+                    trend_emoji = "📈" if change > 0 else "📉" if change < 0 else "➡️"
+                    trend_color = "#4CAF50" if change > 0 else "#F44336" if change < 0 else "#666"
                     
-                    # 기술적 분석
-                    st.subheader("📈 기술적 분석")
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h4>추세</h4>
+                        <h3 style="margin: 5px 0; color: {trend_color};">{trend_emoji}</h3>
+                        <p style="color: {trend_color}; margin: 0; font-weight: bold;">{trend}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # 차트 생성
+                st.markdown("---")
+                chart_data = stock_data.generate_chart_data(selected_symbol, chart_period)
+                
+                if chart_data is not None:
+                    # 가격 차트
+                    fig_price = go.Figure()
+                    fig_price.add_trace(go.Scatter(
+                        x=chart_data['Date'],
+                        y=chart_data['Price'],
+                        mode='lines',
+                        name='주가',
+                        line=dict(color='#1f77b4', width=3),
+                        hovertemplate='날짜: %{x}<br>가격: %{y:,.2f}<extra></extra>'
+                    ))
                     
-                    # 이동평균
-                    stock_data['MA20'] = stock_data['Close'].rolling(window=20).mean()
-                    stock_data['MA50'] = stock_data['Close'].rolling(window=50).mean()
+                    fig_price.update_layout(
+                        title=f"📈 {stock_info['name']} 주가 차트 ({chart_period}일)",
+                        xaxis_title="날짜",
+                        yaxis_title="가격",
+                        height=400,
+                        template="plotly_white",
+                        hovermode='x'
+                    )
+                    
+                    st.plotly_chart(fig_price, use_container_width=True)
+                    
+                    # 거래량 차트
+                    fig_volume = go.Figure()
+                    fig_volume.add_trace(go.Bar(
+                        x=chart_data['Date'],
+                        y=chart_data['Volume'],
+                        name='거래량',
+                        marker_color='rgba(55, 128, 191, 0.7)',
+                        hovertemplate='날짜: %{x}<br>거래량: %{y:,}<extra></extra>'
+                    ))
+                    
+                    fig_volume.update_layout(
+                        title=f"📊 {stock_info['name']} 거래량 차트 ({chart_period}일)",
+                        xaxis_title="날짜",
+                        yaxis_title="거래량",
+                        height=300,
+                        template="plotly_white",
+                        hovermode='x'
+                    )
+                    
+                    st.plotly_chart(fig_volume, use_container_width=True)
+                    
+                    # 기술적 분석 요약
+                    st.markdown("### 📊 간단 분석")
                     
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.write("**이동평균 분석:**")
-                        current_price = stock_data['Close'].iloc[-1]
-                        ma20 = stock_data['MA20'].iloc[-1]
-                        ma50 = stock_data['MA50'].iloc[-1]
+                        st.markdown("**가격 동향:**")
+                        avg_price = chart_data['Price'].mean()
+                        current_vs_avg = ((stock_info['price'] - avg_price) / avg_price) * 100
                         
-                        if current_price > ma20 > ma50:
-                            st.success("✅ 상승 추세 (현재가 > MA20 > MA50)")
-                        elif current_price < ma20 < ma50:
-                            st.error("❌ 하락 추세 (현재가 < MA20 < MA50)")
+                        if current_vs_avg > 5:
+                            st.success(f"✅ 평균 대비 {current_vs_avg:.1f}% 높음 (강세)")
+                        elif current_vs_avg < -5:
+                            st.error(f"❌ 평균 대비 {current_vs_avg:.1f}% 낮음 (약세)")
                         else:
-                            st.warning("⚠️ 혼조 상태")
+                            st.info(f"⚡ 평균 대비 {current_vs_avg:.1f}% (횡보)")
                     
                     with col2:
-                        st.write("**변동성 분석:**")
-                        volatility = stock_data['Close'].pct_change().std() * (252**0.5) * 100
-                        st.metric("연간 변동성", f"{volatility:.2f}%")
+                        st.markdown("**거래량 분석:**")
+                        avg_volume = chart_data['Volume'].mean()
+                        current_vs_avg_vol = ((stock_info['volume'] - avg_volume) / avg_volume) * 100
                         
-                        if volatility > 30:
-                            st.error("높은 변동성")
-                        elif volatility > 20:
-                            st.warning("중간 변동성")
+                        if current_vs_avg_vol > 20:
+                            st.success(f"📊 평균 대비 {current_vs_avg_vol:.1f}% 높음 (활발)")
+                        elif current_vs_avg_vol < -20:
+                            st.warning(f"📊 평균 대비 {current_vs_avg_vol:.1f}% 낮음 (한산)")
                         else:
-                            st.success("낮은 변동성")
-                    
-            except Exception as e:
-                st.error(f"시장 분석 중 오류가 발생했습니다: {str(e)}")
-                st.info("다른 종목을 선택하거나 잠시 후 다시 시도해주세요.")
+                            st.info(f"📊 평균 대비 {current_vs_avg_vol:.1f}% (보통)")
+                
+                st.caption("⚠️ 위 데이터는 시연용 시뮬레이션 데이터입니다.")
     
-    # 탭 3: ESG 분석
+    # 탭 3: 금융 뉴스
     with tab3:
-        st.markdown('<div class="section-header">ESG 분석</div>', unsafe_allow_html=True)
-        
-        esg_symbol = st.selectbox(
-            "ESG 분석할 종목을 선택하세요:",
-            Config.DEFAULT_STOCKS,
-            index=0,
-            key="esg_symbol"
-        )
-        
-        if st.button("🌱 ESG 분석", type="primary"):
-            try:
-                with st.spinner("ESG 데이터를 분석하고 있습니다..."):
-                    # ESG 데이터 수집
-                    esg_data = data_collector.get_esg_data(esg_symbol)
-                    
-                    # ESG 점수 표시
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("총 ESG 점수", f"{esg_data['esg_score']}/100")
-                    with col2:
-                        st.metric("환경 점수", f"{esg_data['environment_score']}/100")
-                    with col3:
-                        st.metric("사회 점수", f"{esg_data['social_score']}/100")
-                    with col4:
-                        st.metric("지배구조 점수", f"{esg_data['governance_score']}/100")
-                    
-                    # ESG 차트
-                    if any(esg_data[key] > 0 for key in ['environment_score', 'social_score', 'governance_score']):
-                        esg_chart = chart_generator.create_esg_chart(esg_data)
-                        st.plotly_chart(esg_chart, use_container_width=True)
-                    else:
-                        st.info("📊 해당 종목의 ESG 데이터가 제한적입니다.")
-                    
-                    # ESG 리스크 분석
-                    st.subheader("⚠️ ESG 리스크 분석")
-                    
-                    controversy_level = esg_data['controversy_level']
-                    if controversy_level == 0:
-                        st.success("✅ ESG 관련 논란 없음")
-                    elif controversy_level <= 2:
-                        st.warning(f"⚠️ 낮은 수준의 ESG 논란 (레벨 {controversy_level})")
-                    elif controversy_level <= 3:
-                        st.warning(f"⚠️ 중간 수준의 ESG 논란 (레벨 {controversy_level})")
-                    else:
-                        st.error(f"❌ 높은 수준의 ESG 논란 (레벨 {controversy_level})")
-                    
-                    # ESG 투자 가이드
-                    with st.expander("📚 ESG 투자 가이드"):
-                        st.write("""
-                        **ESG 점수 해석:**
-                        - **80-100점**: 매우 우수한 ESG 성과
-                        - **60-79점**: 우수한 ESG 성과
-                        - **40-59점**: 평균적인 ESG 성과
-                        - **20-39점**: 개선이 필요한 ESG 성과
-                        - **0-19점**: ESG 위험이 높음
-                        
-                        **ESG 투자 시 고려사항:**
-                        - 환경: 탄소 배출, 재생에너지 사용, 환경 오염 관리
-                        - 사회: 직원 복지, 지역사회 기여, 제품 안전성
-                        - 지배구조: 이사회 독립성, 투명한 경영, 주주 권익 보호
-                        """)
-                    
-                    st.caption(f"데이터 업데이트: {esg_data['last_updated']}")
-                    
-            except Exception as e:
-                st.error(f"ESG 분석 중 오류가 발생했습니다: {str(e)}")
-                st.info("다른 종목을 선택하거나 잠시 후 다시 시도해주세요.")
-    
-    # 탭 4: 뉴스
-    with tab4:
         st.markdown('<div class="section-header">실시간 금융 뉴스</div>', unsafe_allow_html=True)
         
-        # 뉴스 카테고리 선택
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([3, 1])
         with col1:
-            news_query = st.selectbox(
-                "뉴스 카테고리:",
-                ["stock market", "cryptocurrency", "economy", "federal reserve", "inflation", "technology stocks"],
-                index=0
-            )
-        
+            st.markdown("최신 금융 시장 뉴스를 확인하세요")
         with col2:
-            news_count = st.selectbox("뉴스 개수:", [5, 10, 15, 20], index=1)
+            if st.button("🔄 뉴스 새로고침", type="secondary"):
+                st.rerun()
         
-        if st.button("📰 뉴스 불러오기", type="primary"):
-            try:
-                with st.spinner("최신 뉴스를 불러오고 있습니다..."):
-                    # 뉴스 데이터 수집
-                    news_articles = data_collector.get_financial_news(news_query, news_count)
-                    
-                    if news_articles:
-                        st.success(f"✅ {len(news_articles)}개의 뉴스를 불러왔습니다.")
-                        
-                        # 뉴스 표시
-                        for i, article in enumerate(news_articles):
-                            with st.expander(f"📄 {article.get('title', 'No Title')}", expanded=(i < 3)):
-                                col1, col2 = st.columns([3, 1])
-                                
-                                with col1:
-                                    # 뉴스 내용
-                                    description = article.get('description', '내용이 없습니다.')
-                                    if description:
-                                        st.write(description)
-                                    
-                                    # 뉴스 링크
-                                    url = article.get('url', '')
-                                    if url:
-                                        st.markdown(f"[📖 전체 기사 읽기]({url})")
-                                
-                                with col2:
-                                    # 뉴스 메타데이터
-                                    source = article.get('source', {})
-                                    source_name = source.get('name', 'Unknown') if isinstance(source, dict) else str(source)
-                                    st.caption(f"출처: {source_name}")
-                                    
-                                    published_at = article.get('publishedAt', '')
-                                    if published_at:
-                                        try:
-                                            # 날짜 파싱 시도
-                                            if 'T' in published_at:
-                                                pub_date = datetime.fromisoformat(published_at.replace('Z', '+00:00'))
-                                                st.caption(f"발행: {pub_date.strftime('%Y-%m-%d %H:%M')}")
-                                            else:
-                                                st.caption(f"발행: {published_at}")
-                                        except:
-                                            st.caption(f"발행: {published_at}")
-                        
-                        # AI 뉴스 요약
-                        if st.button("🤖 AI 뉴스 요약", key="news_summary"):
-                            with st.spinner("AI가 뉴스를 요약하고 있습니다..."):
-                                try:
-                                    # 뉴스 제목들을 합쳐서 요약 요청
-                                    news_titles = [article.get('title', '') for article in news_articles[:5]]
-                                    summary_prompt = f"다음 금융 뉴스 제목들을 바탕으로 현재 시장 상황을 요약해주세요:\n" + "\n".join(news_titles)
-                                    
-                                    summary = llm_client.get_ai_response(summary_prompt)
-                                    
-                                    st.markdown('<div class="info-box">', unsafe_allow_html=True)
-                                    st.markdown("**🤖 AI 뉴스 요약:**")
-                                    st.write(summary)
-                                    st.markdown('</div>', unsafe_allow_html=True)
-                                    
-                                except Exception as e:
-                                    st.error(f"뉴스 요약 중 오류가 발생했습니다: {str(e)}")
-                    else:
-                        st.warning("⚠️ 뉴스를 불러올 수 없습니다. 네트워크 연결을 확인해주세요.")
-                        
-                        # 대체 뉴스 피드 제안
-                        st.info("""
-                        **대체 뉴스 소스:**
-                        - [Yahoo Finance](https://finance.yahoo.com/news/)
-                        - [CNBC](https://www.cnbc.com/markets/)
-                        - [Reuters Business](https://www.reuters.com/business/)
-                        - [Bloomberg](https://www.bloomberg.com/markets)
-                        """)
-                    
-            except Exception as e:
-                st.error(f"뉴스 로딩 중 오류가 발생했습니다: {str(e)}")
-                st.info("잠시 후 다시 시도해주세요.")
-    
-    # 하단 정보
-    st.markdown("---")
-    
-    # 포트폴리오 시뮬레이션 섹션
-    with st.expander("💼 포트폴리오 시뮬레이션", expanded=False):
-        st.markdown("**포트폴리오 구성:**")
-        
-        portfolio_stocks = st.multiselect(
-            "종목 선택:",
-            Config.DEFAULT_STOCKS + ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA'],
-            default=['AAPL', 'GOOGL', 'MSFT']
-        )
-        
-        if portfolio_stocks:
-            # 비중 설정
-            weights = []
-            st.write("**종목별 비중 설정 (%):**")
-            cols = st.columns(len(portfolio_stocks))
-            
-            for i, stock in enumerate(portfolio_stocks):
-                with cols[i]:
-                    weight = st.number_input(
-                        f"{stock}",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=100.0/len(portfolio_stocks),
-                        step=5.0,
-                        key=f"weight_{stock}"
-                    )
-                    weights.append(weight)
-            
-            total_weight = sum(weights)
-            if abs(total_weight - 100.0) > 0.1:
-                st.warning(f"⚠️ 총 비중이 {total_weight:.1f}%입니다. 100%로 맞춰주세요.")
-            else:
-                st.success("✅ 포트폴리오 비중이 올바르게 설정되었습니다.")
+        # 뉴스 불러오기
+        try:
+            with st.spinner("📰 최신 뉴스를 불러오는 중..."):
+                news_articles = news_data.get_financial_news(10)
                 
-                if st.button("📊 포트폴리오 분석"):
-                    try:
-                        with st.spinner("포트폴리오를 분석하고 있습니다..."):
-                            # 포트폴리오 데이터 생성
-                            portfolio_data = dict(zip(portfolio_stocks, weights))
-                            
-                            # 포트폴리오 차트
-                            portfolio_chart = chart_generator.create_portfolio_chart(portfolio_data)
-                            st.plotly_chart(portfolio_chart, use_container_width=True)
-                            
-                            # 포트폴리오 성과 분석
-                            st.subheader("📈 포트폴리오 성과 분석")
-                            
-                            total_return = 0
-                            total_risk = 0
-                            
-                            for stock, weight in portfolio_data.items():
-                                try:
-                                    stock_data = data_collector.get_stock_data(stock, "1y")
-                                    returns = stock_data['Close'].pct_change().dropna()
-                                    annual_return = returns.mean() * 252 * 100
-                                    annual_volatility = returns.std() * (252**0.5) * 100
-                                    
-                                    total_return += annual_return * (weight / 100)
-                                    total_risk += (annual_volatility * (weight / 100)) ** 2
-                                except:
-                                    continue
-                            
-                            total_risk = (total_risk ** 0.5)
-                            
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("예상 연간 수익률", f"{total_return:.2f}%")
-                            with col2:
-                                st.metric("예상 연간 변동성", f"{total_risk:.2f}%")
-                            with col3:
-                                sharpe_ratio = total_return / total_risk if total_risk > 0 else 0
-                                st.metric("샤프 비율", f"{sharpe_ratio:.2f}")
-                            
-                            # 리스크 평가
-                            if total_risk < 15:
-                                st.success("✅ 낮은 리스크 포트폴리오")
-                            elif total_risk < 25:
-                                st.warning("⚠️ 중간 리스크 포트폴리오")
-                            else:
-                                st.error("❌ 높은 리스크 포트폴리오")
+                if news_articles:
+                    st.success(f"✅ {len(news_articles)}개의 뉴스를 불러왔습니다")
                     
-                    except Exception as e:
-                        st.error(f"포트폴리오 분석 중 오류가 발생했습니다: {str(e)}")
-    
-    # 푸터
-    st.markdown("---")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("**💡 사용 팁:**")
-        st.write("- API 키를 설정하면 더 정확한 분석이 가능합니다")
-        st.write("- 실시간 데이터는 시장 개장 시간에 업데이트됩니다")
-    
-    with col2:
-        st.markdown("**⚠️ 주의사항:**")
-        st.write("- 본 서비스는 참고용이며 투자 권유가 아닙니다")
-        st.write("- 실제 투자 시 충분한 검토가 필요합니다")
-    
-    with col3:
-        st.markdown("**🔧 기술 스택:**")
-        st.write("- HyperCLOVA X / OpenAI API")
-        st.write("- yfinance, plotly, streamlit")
-    
-    # 실시간 시계 (선택사항)
-    with st.sidebar:
-        st.markdown("---")
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        st.caption(f"현재 시간: {current_time}")
-        
-        # 시장 상태 표시
-        now = datetime.now()
-        if 9 <= now.hour < 16:  # 대략적인 미국 시장 시간 (EST 기준)
-            st.success("🟢 미국 시장 개장 중")
-        else:
-            st.info("🔴 미국 시장 마감")
-
-if __name__ == "__main__":
-    main()
+                    for i, article in enumerate(news_articles):
+                        with st.expander(f"📄 {article['title']}", expanded=(i < 2)):
+                            col1, col2 = st.columns([4, 1])
+                            
+                            with col1:
+                                if article['description']:
+                                    st.write(article['description'])
+                                
+                                if article['url'] and article['url'] != '#':
+                                    st.markdown(f"[📖 전체 기사 읽기]({article['url']})")
+                            
+                            with col2:
+                                st.caption(f"🏢 {article['source']}")
+                                if article['published']:
+                                    st.caption(f"🕐 {article['published']}")
+                else:
+                    st.warning("
