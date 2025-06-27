@@ -1,5 +1,4 @@
 import os
-import csv
 import requests
 import streamlit as st
 
@@ -83,6 +82,18 @@ def get_ai_response(question: str) -> str:
     return "AI API 설정이 필요합니다."
 
 
+def analyze_question(question: str) -> str:
+    """질문을 분석하여 핵심 키워드를 추출하는 AI 호출 예시."""
+    prompt = f"다음 질문에서 핵심 금융 키워드를 추출해 주세요: {question}"
+    return get_ai_response(prompt)
+
+
+def summarize_answer(answer: str) -> str:
+    """AI를 사용해 답변을 요약하는 예시."""
+    prompt = f"다음 내용을 세 문장 이내로 요약해 주세요:\n{answer}"
+    return get_ai_response(prompt)
+
+
 def sample_esg_info() -> str:
     """삼성전자 ESG 분석 예시."""
     return (
@@ -119,8 +130,20 @@ if st.button("분석 요청"):
         st.warning("질문을 입력해주세요.")
     else:
         q = f"{selected_ticker} 관련 질문: {question}"
+        with st.spinner("질문을 분석 중입니다..."):
+            analysis = analyze_question(q)
         with st.spinner("AI가 답변을 생성 중입니다..."):
             answer = get_ai_response(q)
+        with st.spinner("답변을 요약 중입니다..."):
+            summary = summarize_answer(answer)
+
+        st.subheader("질문 분석")
+        st.write(analysis)
+
+        st.subheader("AI 답변 요약")
+        st.write(summary)
+
+        st.subheader("AI 원문 답변")
         st.write(answer)
 
         with st.expander("주가 정보"):
