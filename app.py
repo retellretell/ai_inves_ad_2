@@ -1,39 +1,34 @@
 import os
-from datetime import datetime
-
 import requests
 import streamlit as st
-import yfinance as yf
-import plotly.graph_objects as go
 
-# ----- 설정 -----
-# API 키 및 엔드포인트는 환경변수 또는 Streamlit secrets에서 불러옵니다.
-HYPERCLOVA_API_KEY = os.getenv("HYPERCLOVA_API_KEY", st.secrets.get("HYPERCLOVA_API_KEY", ""))
-HYPERCLOVA_ENDPOINT = os.getenv("HYPERCLOVA_ENDPOINT", st.secrets.get("HYPERCLOVA_ENDPOINT", ""))
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", st.secrets.get("OPENAI_API_KEY", ""))
-NEWS_API_KEY = os.getenv("NEWS_API_KEY", st.secrets.get("NEWS_API_KEY", ""))
-FMP_API_KEY = os.getenv("FMP_API_KEY", st.secrets.get("FMP_API_KEY", ""))  # FinancialModelingPrep ESG
-# ----------------
-
+# 앱 설정
 st.set_page_config(page_title="HyperCLOVA X 기반 AI 투자 어드바이저")
 st.title("HyperCLOVA X 기반 AI 투자 어드바이저")
 
+# ----- 환경 설정 -----
+# 실제 서비스에서는 환경변수 또는 Streamlit secrets를 이용해 API 키와
+# 엔드포인트를 관리합니다.
+HYPERCLOVA_API_KEY = os.getenv("HYPERCLOVA_API_KEY", "")
+HYPERCLOVA_ENDPOINT = os.getenv("HYPERCLOVA_ENDPOINT", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# ---------------------
+
 
 def get_ai_response(question: str) -> str:
-    """HyperCLOVA X 또는 ChatGPT API를 통해 답변을 반환합니다."""
+    """HyperCLOVA X API가 우선, 없으면 ChatGPT 예시 답변을 반환."""
     if HYPERCLOVA_API_KEY and HYPERCLOVA_ENDPOINT:
         try:
             headers = {"Authorization": f"Bearer {HYPERCLOVA_API_KEY}"}
             payload = {"prompt": question, "max_tokens": 300}
-            res = requests.post(HYPERCLOVA_ENDPOINT, headers=headers, json=payload, timeout=10)
-            res.raise_for_status()
-            data = res.json()
-            if isinstance(data, dict) and data.get("text"):
-                return data["text"].strip()
+            # 실제 사용 시 주석을 해제하여 호출합니다.
+            # res = requests.post(HYPERCLOVA_ENDPOINT, headers=headers, json=payload, timeout=10)
+            # res.raise_for_status()
+            # data = res.json().get("text", "").strip()
+            # return data if data else "응답이 없습니다."
+            return f"[예시] HyperCLOVA X가 '{question}'에 대해 생성한 답변입니다."
         except Exception as e:
             st.warning(f"HyperCLOVA X API 오류: {e}")
-
     if OPENAI_API_KEY:
         try:
             headers = {
@@ -44,103 +39,59 @@ def get_ai_response(question: str) -> str:
                 "model": "gpt-3.5-turbo",
                 "messages": [{"role": "user", "content": question}],
             }
-            res = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=10,
-            )
-            res.raise_for_status()
-            data = res.json()
-            return data["choices"][0]["message"]["content"].strip()
+            # res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=10)
+            # res.raise_for_status()
+            # data = res.json()["choices"][0]["message"]["content"].strip()
+            # return data
+            return f"[예시] ChatGPT가 '{question}'에 대해 제공한 답변입니다."
         except Exception as e:
             return f"AI 응답을 가져올 수 없습니다: {e}"
     return "AI API 설정이 필요합니다."
 
 
-def get_esg_info(symbol: str) -> str:
-    """FinancialModelingPrep API를 이용해 ESG 정보를 가져옵니다."""
-    if not symbol:
-        return "종목 코드가 필요합니다."
-    if not FMP_API_KEY:
-        return "ESG API 키가 설정되지 않았습니다."
-    url = "https://financialmodelingprep.com/api/v4/esg-environmental-social-governance-data"
-    params = {"symbol": symbol, "apikey": FMP_API_KEY}
-    try:
-        res = requests.get(url, params=params, timeout=10)
-        res.raise_for_status()
-        data = res.json()
-        if data:
-            esg = data[0]
-            return (
-                f"환경 점수: {esg.get('environmentalScore')} | "
-                f"사회 점수: {esg.get('socialScore')} | "
-                f"지배구조 점수: {esg.get('governanceScore')}"
-            )
-    except Exception as e:
-        return f"ESG 정보를 가져올 수 없습니다: {e}"
-    return "해당 종목의 ESG 정보가 없습니다."
+def sample_esg_info() -> str:
+    """삼성전자 ESG 분석 예시."""
+    return (
+        "삼성전자 ESG 분석 예시:\n"
+        "- 환경(E) 점수: 80/100\n"
+        "- 사회(S) 점수: 75/100\n"
+        "- 지배구조(G) 점수: 78/100"
+    )
 
 
-def get_news(query: str):
-    """News API를 통해 최신 뉴스를 반환합니다."""
-    if not NEWS_API_KEY:
-        return ["NEWS API 키가 설정되지 않았습니다."]
-    url = "https://newsapi.org/v2/everything"
-    params = {
-        "q": query,
-        "apiKey": NEWS_API_KEY,
-        "language": "ko",
-        "pageSize": 5,
-        "sortBy": "publishedAt",
-    }
-    try:
-        res = requests.get(url, params=params, timeout=10)
-        res.raise_for_status()
-        articles = res.json().get("articles", [])
-        return [f"[{a['title']}]({a['url']})" for a in articles]
-    except Exception as e:
-        return [f"뉴스를 가져올 수 없습니다: {e}"]
+def sample_news() -> list[str]:
+    """샘플 금융 뉴스 데이터."""
+    return [
+        "삼성전자가 최신 반도체 기술 로드맵을 공개했습니다.",
+        "국내 증시가 글로벌 금리 변동에 따라 변동성을 보이고 있습니다.",
+        "환경 규제 강화로 친환경 사업 투자 수요가 증가하고 있습니다.",
+    ]
 
 
-def get_market_chart(symbol: str):
-    """yfinance 데이터를 이용한 주가 시각화 그래프를 반환합니다."""
-    try:
-        data = yf.download(symbol, period="3mo", progress=False)
-        if data.empty:
-            return None
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(x=data.index, y=data["Close"], mode="lines", name="Close")
-        )
-        fig.update_layout(title=f"{symbol} 최근 3개월 주가", xaxis_title="날짜", yaxis_title="종가")
-        return fig
-    except Exception as e:
-        st.warning(f"주가 데이터를 가져올 수 없습니다: {e}")
-        return None
+def sample_market_analysis() -> str:
+    """시장 영향 분석 예시."""
+    return (
+        "최근 금리 인상 기조와 공급망 이슈로 인해 전반적인 IT 업종의 단기 조정이 예상됩니다. "
+        "다만 장기적으로는 반도체 수요 회복과 ESG 투자 확대가 긍정적인 요인으로 작용할 수 있습니다."
+    )
 
 
 question = st.text_input("금융 관련 질문을 입력하세요")
-symbol = st.text_input("종목 코드 (예: 005930.KS)", value="005930.KS")
 
 if st.button("분석 요청"):
     if not question:
         st.warning("질문을 입력해주세요.")
     else:
-        with st.spinner("AI가 응답을 생성 중입니다..."):
+        with st.spinner("AI가 답변을 생성 중입니다..."):
             answer = get_ai_response(question)
+        st.write(answer)
 
-        tabs = st.tabs(["요약 답변", "ESG 분석", "최신 뉴스", "시장 영향"])
-        with tabs[0]:
-            st.write(answer)
-        with tabs[1]:
-            st.write(get_esg_info(symbol))
-        with tabs[2]:
-            for line in get_news(symbol.split(".")[0]):
-                st.write("-", line)
-        with tabs[3]:
-            fig = get_market_chart(symbol)
-            if fig:
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.write("주가 정보를 표시할 수 없습니다.")
+        with st.expander("ESG 분석"):
+            st.write(sample_esg_info())
+
+        with st.expander("최신 금융 뉴스 요약"):
+            for item in sample_news():
+                st.write("-", item)
+
+        with st.expander("시장 영향 분석"):
+            st.write(sample_market_analysis())
