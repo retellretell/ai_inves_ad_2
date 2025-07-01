@@ -77,6 +77,7 @@ def get_api_key():
 class HyperCLOVAXClient:
     def __init__(self):
         self.api_key = get_api_key()
+        # 올바른 엔드포인트 URL 설정
         self.endpoint = "https://clovastudio.stream.ntruss.com/testapp/v1/chat-completions/HCX-003"
         
     def get_response(self, question: str) -> str:
@@ -85,12 +86,15 @@ class HyperCLOVAXClient:
             return self._get_fallback_response(question)
         
         try:
+            # 새로운 HyperCLOVA X API 형식
             headers = {
                 'X-NCP-CLOVASTUDIO-API-KEY': self.api_key,
                 'X-NCP-APIGW-API-KEY': self.api_key,
-                'Content-Type': 'application/json',
-                'Accept': 'text/event-stream'
+                'Content-Type': 'application/json'
             }
+            
+            # 새로운 엔드포인트 사용
+            url = "https://clovastudio.stream.ntruss.com/testapp/v1/chat-completions/HCX-003"
             
             payload = {
                 'messages': [
@@ -109,11 +113,12 @@ class HyperCLOVAXClient:
                 'temperature': 0.5,
                 'repeatPenalty': 1.2,
                 'stopBefore': [],
-                'includeAiFilters': True
+                'includeAiFilters': True,
+                'seed': 0
             }
             
             response = requests.post(
-                self.endpoint,
+                url,
                 headers=headers,
                 json=payload,
                 timeout=30
@@ -130,6 +135,12 @@ class HyperCLOVAXClient:
                         raise Exception("응답 내용이 비어있습니다.")
                 else:
                     raise Exception("응답 형식이 올바르지 않습니다.")
+            elif response.status_code == 401:
+                raise Exception("API 키 인증 실패: API 키를 다시 확인해주세요.")
+            elif response.status_code == 403:
+                raise Exception("API 접근 권한 없음: 계정 상태를 확인해주세요.")
+            elif response.status_code == 429:
+                raise Exception("API 사용량 한도 초과: 잠시 후 다시 시도해주세요.")
             else:
                 raise Exception(f"API 호출 실패: {response.status_code} - {response.text}")
                 
