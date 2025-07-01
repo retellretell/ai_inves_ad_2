@@ -309,23 +309,34 @@ def main():
     # 메인 입력 영역
     st.markdown("### 💬 투자 질문하기")
     
-    # 질문 입력
-    default_question = ""
-    if hasattr(st.session_state, 'selected_question'):
-        default_question = st.session_state.selected_question
-        del st.session_state.selected_question
+    # 세션 상태 초기화
+    if 'user_question' not in st.session_state:
+        st.session_state.user_question = ""
+    if 'selected_question' not in st.session_state:
+        st.session_state.selected_question = ""
     
+    # 선택된 질문이 있으면 업데이트
+    if st.session_state.selected_question:
+        st.session_state.user_question = st.session_state.selected_question
+        st.session_state.selected_question = ""  # 초기화
+    
+    # 질문 입력
     user_question = st.text_area(
         "",
-        value=default_question,
+        value=st.session_state.user_question,
         placeholder="예: 삼성전자 주식 투자 전망을 HyperCLOVA X로 분석해주세요",
         height=100,
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key="question_input"
     )
+    
+    # 질문이 변경되면 세션 상태 업데이트
+    if user_question != st.session_state.user_question:
+        st.session_state.user_question = user_question
     
     # 분석 버튼
     if st.button("🤖 AI 분석 시작", type="primary", use_container_width=True):
-        if user_question.strip():
+        if st.session_state.user_question.strip():
             # 진행 표시
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -343,7 +354,7 @@ def main():
                 status_text.text("📊 투자 인사이트 생성 중...")
                 progress_bar.progress(75)
                 
-                response = ai_client.get_response(user_question)
+                response = ai_client.get_response(st.session_state.user_question)
                 
                 status_text.text("✅ 분석 완료!")
                 progress_bar.progress(100)
@@ -377,7 +388,7 @@ def main():
             
             with col2:
                 # 주식 데이터 (질문에 종목이 포함된 경우)
-                if any(keyword in user_question.lower() for keyword in ["삼성", "테슬라", "애플"]):
+                if any(keyword in st.session_state.user_question.lower() for keyword in ["삼성", "테슬라", "애플"]):
                     st.markdown("### 📊 주가 정보")
                     
                     # 종목 매핑
@@ -388,7 +399,7 @@ def main():
                     }
                     
                     for keyword, ticker in ticker_map.items():
-                        if keyword in user_question.lower():
+                        if keyword in st.session_state.user_question.lower():
                             stock_data = get_stock_data(ticker)
                             if stock_data is not None:
                                 current_price = stock_data['Close'].iloc[-1]
@@ -410,7 +421,7 @@ def main():
             st.warning("💬 질문을 입력해주세요.")
     
     # 샘플 질문 (메인 영역)
-    if not user_question:
+    if not st.session_state.user_question:
         st.markdown("### 💡 샘플 질문")
         
         sample_questions = [
