@@ -140,4 +140,46 @@ class AutoStockMapper:
         # 1. 정확한 매칭
         for name, ticker in self.stock_list.items():
             if query == name.lower():
-                return ticker,
+                return ticker, name, 100
+        
+        # 2. 부분 매칭
+        for name, ticker in self.stock_list.items():
+            if query in name.lower() or name.lower() in query:
+                return ticker, name, 90
+        
+        # 3. 유사도 검색 (간단한 방식)
+        best_match = None
+        best_score = 0
+        
+        for name, ticker in self.stock_list.items():
+            similarity = self.calculate_similarity(query, name.lower())
+            if similarity > best_score and similarity >= 70:
+                best_match = (ticker, name, similarity)
+                best_score = similarity
+        
+        if best_match:
+            return best_match
+        
+        return None
+    
+    def calculate_similarity(self, s1, s2):
+        """간단한 유사도 계산 (레벤슈타인 거리 기반)"""
+        if len(s1) < len(s2):
+            return self.calculate_similarity(s2, s1)
+
+        if len(s2) == 0:
+            return 0
+
+        previous_row = list(range(len(s2) + 1))
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+        
+        # 유사도 퍼센트로 변환
+        max_len = max(len(s1), len(s2))
+        return ((max_len - previous_row[-1]) / max_len) * 100
