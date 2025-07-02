@@ -1,6 +1,7 @@
 """
 HyperCLOVA X 기반 AI 투자 어드바이저
 미래에셋증권 AI Festival 2025 출품작
+- 실시간 분석 전용 버전
 """
 
 import streamlit as st
@@ -76,26 +77,13 @@ def load_css():
             margin: 0.5rem 0;
             box-shadow: 0 4px 15px rgba(244,67,54,0.3);
         }
-        .sample-question {
-            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-            border: 1px solid #2196f3;
-            border-radius: 0.5rem;
-            padding: 1rem;
-            margin: 0.5rem 0;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        .sample-question:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(33,150,243,0.3);
-        }
-        .news-item {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 0.5rem;
-            padding: 1rem;
-            margin: 0.5rem 0;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        .error-message {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            margin: 1rem 0;
+            border-left: 5px solid #ff3838;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -110,79 +98,147 @@ def get_api_key():
         # 환경변수에서 가져오기
         return os.getenv("CLOVA_STUDIO_API_KEY", "")
 
-# HyperCLOVA X 클라이언트 (수정된 버전)
+# 실시간 데이터 수집
+@st.cache_data(ttl=300)
+def get_real_time_market_data():
+    """실시간 시장 데이터 수집"""
+    try:
+        # 주요 지수 데이터
+        indices = {
+            "KOSPI": "^KS11",
+            "NASDAQ": "^IXIC", 
+            "S&P 500": "^GSPC",
+            "USD/KRW": "KRW=X"
+        }
+        
+        market_data = {}
+        for name, ticker in indices.items():
+            try:
+                data = yf.Ticker(ticker).history(period="1d", interval="1m")
+                if not data.empty:
+                    current = data['Close'].iloc[-1]
+                    prev = data['Close'].iloc[0]
+                    change = ((current - prev) / prev) * 100
+                    market_data[name] = {
+                        'current': current,
+                        'change': change
+                    }
+            except:
+                continue
+        
+        return market_data
+    except Exception as e:
+        logger.error(f"시장 데이터 수집 오류: {e}")
+        return {}
+
+@st.cache_data(ttl=1800)
+def get_recent_news():
+    """최신 경제 뉴스 수집"""
+    try:
+        news_sources = [
+            'https://feeds.finance.yahoo.com/rss/2.0/headline',
+            'https://feeds.reuters.com/reuters/businessNews',
+            'https://rss.cnn.com/rss/money_news_international.rss'
+        ]
+        
+        articles = []
+        for url in news_sources:
+            try:
+                feed = feedparser.parse(url)
+                for entry in feed.entries[:2]:
+                    articles.append({
+                        'title': entry.get('title', ''),
+                        'summary': entry.get('summary', ''),
+                        'published': entry.get('published', ''),
+                        'source': feed.feed.get('title', 'News')
+                    })
+            except:
+                continue
+        
+        return articles[:6]
+    except Exception as e:
+        logger.error(f"뉴스 수집 오류: {e}")
+        return []
+
+# HyperCLOVA X 클라이언트 (실시간 전용)
 class HyperCLOVAXClient:
     def __init__(self):
         self.api_key = get_api_key()
-        # 새로운 스트리밍 엔드포인트 사용
         self.base_url = "https://clovastudio.stream.ntruss.com"
         
-    def get_response(self, question: str) -> str:
-        """HyperCLOVA X API 호출 (수정된 버전)"""
+    def get_real_time_analysis(self, question: str, market_data: dict, news_data: list) -> str:
+        """실시간 데이터 기반 HyperCLOVA X 분석"""
         if not self.api_key:
-            return self._get_fallback_response(question)
+            raise Exception("API 키가 설정되지 않았습니다. .streamlit/secrets.toml 파일에 CLOVA_STUDIO_API_KEY를 설정해주세요.")
         
+        # 실시간 컨텍스트 구성
+        market_context = self._format_market_context(market_data)
+        news_context = self._format_news_context(news_data)
+        
+        # 시스템 프롬프트에 실시간 데이터 포함
+        system_prompt = f"""당신은 전문적인 AI 투자 어드바이저입니다.
+아래 실시간 시장 데이터와 최신 뉴스를 바탕으로 정확하고 실용적인 투자 분석을 제공해주세요.
+
+=== 실시간 시장 데이터 ===
+{market_context}
+
+=== 최신 뉴스 ===
+{news_context}
+
+=== 분석 형식 ===
+📊 **실시간 시장 분석**
+[현재 시장 상황 분석]
+
+💡 **투자 기회**  
+[실시간 데이터 기반 투자 포인트]
+
+⚠️ **리스크 요인**
+[현재 시장 리스크]
+
+📈 **실행 전략**
+[구체적 투자 실행 방안]
+
+🕐 **타이밍 분석**
+[현재 시점 기준 매매 타이밍]
+
+위 실시간 정보를 적극 활용하여 현재 시점에 최적화된 투자 분석을 제공해주세요."""
+
         try:
-            # 올바른 헤더 설정 (문서 기준)
             headers = {
-                'Authorization': f'Bearer {self.api_key}',  # Bearer 토큰 방식
+                'Authorization': f'Bearer {self.api_key}',
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             }
             
-            # Chat Completions API 엔드포인트
             url = f"{self.base_url}/testapp/v1/chat-completions/HCX-003"
             
             payload = {
                 'messages': [
                     {
                         'role': 'system',
-                        'content': '''당신은 전문적인 AI 투자 어드바이저입니다. 
-한국어로 정확하고 실용적인 투자 조언을 제공해주세요. 
-다음 형식으로 답변해주세요:
-
-📊 **투자 분석 요약**
-[핵심 분석 내용]
-
-💡 **투자 포인트**  
-[주요 투자 근거]
-
-⚠️ **리스크 요인**
-[주의사항]
-
-📈 **투자 전략**
-[구체적 실행 방안]
-
-구체적인 데이터와 근거를 포함하여 답변해주세요.'''
+                        'content': system_prompt
                     },
                     {
-                        'role': 'user',
-                        'content': question
+                        'role': 'user', 
+                        'content': f"현재 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n질문: {question}"
                     }
                 ],
                 'topP': 0.8,
                 'topK': 0,
-                'maxTokens': 1500,
-                'temperature': 0.3,  # 더 정확한 답변을 위해 낮춤
+                'maxTokens': 2000,
+                'temperature': 0.2,  # 정확한 분석을 위해 낮은 temperature
                 'repeatPenalty': 1.2,
                 'stopBefore': [],
                 'includeAiFilters': True,
                 'seed': 0
             }
             
-            # API 요청
-            response = requests.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
             
-            # 응답 처리
             if response.status_code == 200:
                 result = response.json()
                 
-                # 응답 파싱 (새로운 형식 적용)
+                # 응답 파싱
                 if 'result' in result:
                     if 'message' in result['result']:
                         content = result['result']['message'].get('content', '')
@@ -192,118 +248,56 @@ class HyperCLOVAXClient:
                         content = str(result['result'])
                     
                     if content:
-                        return f"🤖 **HyperCLOVA X 전문 분석**\n\n{content}"
+                        return f"🤖 **HyperCLOVA X 실시간 분석** ({datetime.now().strftime('%H:%M:%S')})\n\n{content}"
                     else:
-                        raise Exception("응답 내용이 비어있습니다.")
+                        raise Exception("AI 응답이 비어있습니다.")
                 else:
                     raise Exception(f"응답 형식 오류: {result}")
                     
             elif response.status_code == 401:
-                raise Exception("API 키 인증 실패: API 키를 다시 확인해주세요")
+                raise Exception("API 키 인증 실패: 네이버 클라우드 플랫폼에서 API 키를 다시 확인해주세요")
             elif response.status_code == 403:
-                raise Exception("API 접근 권한 없음: 테스트 앱이 생성되었는지 확인해주세요")
+                raise Exception("API 접근 권한 없음: CLOVA Studio에서 테스트 앱이 생성되었는지 확인해주세요")
             elif response.status_code == 429:
                 raise Exception("API 사용량 한도 초과: 잠시 후 다시 시도해주세요")
             elif response.status_code == 400:
                 error_detail = response.json() if response.content else "잘못된 요청"
                 raise Exception(f"요청 오류: {error_detail}")
             else:
-                raise Exception(f"API 호출 실패: {response.status_code} - {response.text[:200]}")
+                raise Exception(f"API 호출 실패 (HTTP {response.status_code}): {response.text[:200]}")
                 
         except requests.exceptions.ConnectTimeout:
-            return f"⚠️ **네트워크 연결 시간 초과**\n\n연결이 불안정합니다. 잠시 후 다시 시도해주세요.\n\n---\n\n{self._get_fallback_response(question)}"
+            raise Exception("네트워크 연결 시간 초과: 인터넷 연결을 확인하고 다시 시도해주세요")
         except requests.exceptions.ConnectionError:
-            return f"⚠️ **네트워크 연결 오류**\n\n인터넷 연결을 확인해주세요.\n\n---\n\n{self._get_fallback_response(question)}"
+            raise Exception("네트워크 연결 오류: 인터넷 연결 상태를 확인해주세요")
         except Exception as e:
-            logger.error(f"HyperCLOVA X API 오류: {str(e)}")
-            return f"⚠️ **HyperCLOVA X 연결 오류**\n\n{str(e)}\n\n---\n\n{self._get_fallback_response(question)}"
+            # 모든 오류를 상위로 전파
+            raise e
     
-    def _get_fallback_response(self, question: str) -> str:
-        """API 실패 시 대체 응답"""
-        if any(keyword in question.lower() for keyword in ["삼성", "samsung", "005930"]):
-            return """
-📊 **삼성전자 투자 분석** (대체 응답)
-
-**🎯 투자 포인트**
-• AI 반도체 수요 급증으로 HBM 시장 독점적 지위
-• 메모리 반도체 업황 회복 기대
-• 안정적인 배당 수익률 약 3%
-• 글로벌 기술주 대비 상대적 저평가
-
-**📈 기술적 분석**
-• 현재가: 약 75,000원 수준
-• 목표가: 85,000원 (+13%)
-• 지지선: 70,000원
-• 저항선: 80,000원
-
-**⚠️ 리스크 요인**
-• 중국 경제 둔화 영향
-• 메모리 사이클 변동성
-• 환율 리스크 (달러 강세)
-
-**💡 투자 전략**
-장기 관점에서 분할 매수 권장. 포트폴리오의 15-20% 적정 비중.
-
-*⚠️ 본 분석은 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.*
-            """
+    def _format_market_context(self, market_data: dict) -> str:
+        """시장 데이터를 컨텍스트 형식으로 변환"""
+        if not market_data:
+            return "시장 데이터를 불러올 수 없습니다."
         
-        elif any(keyword in question.lower() for keyword in ["테슬라", "tesla", "tsla"]):
-            return """
-🚗 **테슬라 투자 분석** (대체 응답)
-
-**⚡ 성장 동력**
-• FSD(완전자율주행) 기술 선도
-• 로보택시 사업 확장 기대
-• 에너지 저장 사업 성장
-• 글로벌 전기차 시장 확대
-
-**📊 밸류에이션**
-• 현재 PER: 60배+ (프리미엄)
-• 성장률: 연 20-30% 기대
-• 시장 지배력: 전기차 점유율 1위
-
-**⚠️ 주요 리스크**
-• 높은 밸류에이션 부담
-• 중국 전기차 업체 경쟁 심화
-• 일론 머스크 개인 리스크
-• 자동차 경기 민감성
-
-**💡 투자 의견**
-고위험 고수익 성향 투자자에게 적합. 포트폴리오 5-10% 수준 권장.
-
-*⚠️ 본 분석은 참고용이며, 실제 투자 결정은 신중히 하시기 바랍니다.*
-            """
+        context = []
+        for name, data in market_data.items():
+            change_symbol = "📈" if data['change'] >= 0 else "📉"
+            context.append(f"{change_symbol} {name}: {data['current']:.2f} ({data['change']:+.2f}%)")
         
-        else:
-            return """
-📊 **AI 투자 상담** (대체 응답)
-
-**💡 기본 투자 원칙**
-
-**1. 분산 투자**
-• 여러 종목, 섹터에 분산
-• 지역별 분산 (국내/해외)
-• 시간 분산 (적립식 투자)
-
-**2. 장기 투자**
-• 최소 3-5년 이상 관점
-• 복리 효과 활용
-• 단기 변동성 극복
-
-**3. 리스크 관리**
-• 비상금 6개월분 확보
-• 위험 허용도 파악
-• 정기적 포트폴리오 점검
-
-**🎯 현재 시장 환경**
-• AI 기술 발전으로 관련 주식 주목
-• 금리 변동에 따른 섹터 로테이션
-• ESG 투자 트렌드 지속
-
-더 구체적인 종목이나 전략에 대해 질문해주세요!
-
-*⚠️ 본 내용은 일반적인 정보이며, 개별 투자 권유가 아닙니다.*
-            """
+        return "\n".join(context)
+    
+    def _format_news_context(self, news_data: list) -> str:
+        """뉴스 데이터를 컨텍스트 형식으로 변환"""
+        if not news_data:
+            return "최신 뉴스를 불러올 수 없습니다."
+        
+        context = []
+        for i, article in enumerate(news_data[:3], 1):
+            context.append(f"{i}. {article['title']}")
+            if article.get('summary'):
+                context.append(f"   요약: {article['summary'][:100]}...")
+        
+        return "\n".join(context)
 
 # 주식 데이터 수집
 @st.cache_data(ttl=300)
@@ -318,35 +312,6 @@ def get_stock_data(ticker: str):
     except Exception as e:
         st.error(f"주식 데이터 오류: {str(e)}")
         return None
-
-# 뉴스 데이터 수집
-@st.cache_data(ttl=1800)
-def get_news_data():
-    """뉴스 데이터 수집"""
-    try:
-        rss_urls = [
-            'https://feeds.finance.yahoo.com/rss/2.0/headline',
-            'https://feeds.reuters.com/reuters/businessNews'
-        ]
-        
-        articles = []
-        for url in rss_urls:
-            try:
-                feed = feedparser.parse(url)
-                for entry in feed.entries[:3]:
-                    articles.append({
-                        'title': entry.get('title', ''),
-                        'summary': entry.get('summary', ''),
-                        'link': entry.get('link', ''),
-                        'published': entry.get('published', ''),
-                        'source': feed.feed.get('title', 'RSS')
-                    })
-            except:
-                continue
-        
-        return articles[:5]
-    except:
-        return []
 
 # 차트 생성 함수
 def create_stock_chart(data, ticker):
@@ -376,9 +341,15 @@ def main():
     
     # 헤더
     st.markdown('<div class="main-header">🤖 HyperCLOVA X AI 투자 어드바이저</div>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; color: #666; font-size: 1.1rem;">🔴 실시간 분석 전용 - Live Market Data</p>', unsafe_allow_html=True)
     
     # 클라이언트 초기화
     ai_client = HyperCLOVAXClient()
+    
+    # 실시간 데이터 로드
+    with st.spinner("📊 실시간 시장 데이터 로딩 중..."):
+        market_data = get_real_time_market_data()
+        news_data = get_recent_news()
     
     # 사이드바
     with st.sidebar:
@@ -386,19 +357,36 @@ def main():
         
         # API 상태
         if ai_client.api_key:
-            st.markdown('<div class="status-good">✅ HyperCLOVA X 연결됨</div>', unsafe_allow_html=True)
+            st.markdown('<div class="status-good">🔴 LIVE - HyperCLOVA X 연결됨</div>', unsafe_allow_html=True)
         else:
             st.markdown('<div class="status-bad">❌ API 키 미설정</div>', unsafe_allow_html=True)
+            st.error("⚠️ API 키를 설정해야 실시간 분석이 가능합니다!")
         
         st.markdown("---")
         
-        # 인기 질문
-        st.markdown("### 💡 인기 질문")
+        # 실시간 시장 현황
+        st.markdown("### 📊 실시간 시장 현황")
+        if market_data:
+            for name, data in market_data.items():
+                change_color = "🟢" if data['change'] >= 0 else "🔴"
+                st.metric(
+                    name,
+                    f"{data['current']:.2f}",
+                    f"{data['change']:+.2f}%",
+                    delta_color="normal"
+                )
+        else:
+            st.info("시장 데이터 로딩 중...")
+        
+        st.markdown("---")
+        
+        # 인기 질문 (실시간 분석 중심)
+        st.markdown("### 💡 실시간 분석 질문")
         popular_questions = [
-            "삼성전자 투자 전망",
-            "테슬라 주식 분석", 
-            "AI 포트폴리오 구성",
-            "초보자 투자 전략"
+            "현재 시장 상황 분석",
+            "오늘 매매 타이밍은?", 
+            "지금 주목해야 할 섹터",
+            "실시간 리스크 요인"
         ]
         
         for question in popular_questions:
@@ -407,40 +395,41 @@ def main():
                 st.rerun()
         
         st.markdown("---")
-        
-        # 빠른 종목 조회
-        st.markdown("### 📊 빠른 종목 조회")
-        quick_tickers = ["AAPL", "TSLA", "NVDA", "005930.KS"]
-        selected_ticker = st.selectbox("종목 선택", quick_tickers)
-        
-        if st.button("차트 보기", use_container_width=True):
-            st.session_state.show_chart = selected_ticker
-        
-        st.markdown("---")
-        st.caption("🕐 실시간 업데이트")
-        st.caption(f"마지막 업데이트: {datetime.now().strftime('%H:%M:%S')}")
+        st.caption(f"🔴 실시간 업데이트: {datetime.now().strftime('%H:%M:%S')}")
     
     # 메인 입력 영역
-    st.markdown("### 💬 투자 질문하기")
+    st.markdown("### 💬 실시간 투자 분석 요청")
     
     # 세션 상태 초기화
     if 'user_question' not in st.session_state:
         st.session_state.user_question = ""
     if 'selected_question' not in st.session_state:
         st.session_state.selected_question = ""
-    if 'show_chart' not in st.session_state:
-        st.session_state.show_chart = ""
     
     # 선택된 질문이 있으면 업데이트
     if st.session_state.selected_question:
         st.session_state.user_question = st.session_state.selected_question
-        st.session_state.selected_question = ""  # 초기화
+        st.session_state.selected_question = ""
+    
+    # 실시간 데이터 표시
+    if market_data or news_data:
+        with st.expander("📊 현재 사용 중인 실시간 데이터", expanded=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**시장 지수**")
+                for name, data in market_data.items():
+                    st.write(f"• {name}: {data['current']:.2f} ({data['change']:+.2f}%)")
+            
+            with col2:
+                st.markdown("**최신 뉴스**")
+                for i, article in enumerate(news_data[:3], 1):
+                    st.write(f"• {article['title'][:50]}...")
     
     # 질문 입력
     user_question = st.text_area(
         "",
         value=st.session_state.user_question,
-        placeholder="예: 삼성전자 주식 투자 전망을 HyperCLOVA X로 분석해주세요",
+        placeholder="예: 현재 시장 상황을 보면 삼성전자 매수 타이밍이 맞나요?",
         height=100,
         label_visibility="collapsed",
         key="question_input"
@@ -450,124 +439,71 @@ def main():
     if user_question != st.session_state.user_question:
         st.session_state.user_question = user_question
     
-    # 분석 버튼
-    if st.button("🤖 AI 분석 시작", type="primary", use_container_width=True):
+    # 실시간 분석 버튼
+    if st.button("🔴 실시간 AI 분석 시작", type="primary", use_container_width=True):
+        if not ai_client.api_key:
+            st.error("⚠️ API 키가 설정되지 않았습니다. .streamlit/secrets.toml 파일에 CLOVA_STUDIO_API_KEY를 설정해주세요.")
+            st.stop()
+            
         if st.session_state.user_question.strip():
             # 진행 표시
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            status_text.text("🔍 HyperCLOVA X가 분석을 시작합니다...")
-            progress_bar.progress(25)
-            
-            # AI 응답 생성
-            with st.spinner("🤖 HyperCLOVA X가 전문 분석을 수행하고 있습니다..."):
-                status_text.text("🧠 데이터 분석 중...")
-                progress_bar.progress(50)
+            try:
+                status_text.text("🔍 실시간 데이터 분석 중...")
+                progress_bar.progress(20)
                 
-                time.sleep(1)  # 사용자 경험을 위한 딜레이
+                status_text.text("🤖 HyperCLOVA X AI 분석 시작...")
+                progress_bar.progress(40)
                 
-                status_text.text("📊 투자 인사이트 생성 중...")
-                progress_bar.progress(75)
+                status_text.text("📊 시장 데이터 통합 분석...")
+                progress_bar.progress(60)
                 
-                response = ai_client.get_response(st.session_state.user_question)
+                # 실시간 AI 분석
+                response = ai_client.get_real_time_analysis(
+                    st.session_state.user_question, 
+                    market_data, 
+                    news_data
+                )
                 
-                status_text.text("✅ 분석 완료!")
+                status_text.text("✅ 실시간 분석 완료!")
                 progress_bar.progress(100)
                 
                 time.sleep(0.5)
                 progress_bar.empty()
                 status_text.empty()
-            
-            # 응답 표시
-            st.markdown('<div class="ai-response">', unsafe_allow_html=True)
-            st.markdown(response)
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # 추가 정보 제공
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # 관련 뉴스
-                st.markdown("### 📰 관련 뉴스")
-                news_articles = get_news_data()
                 
-                if news_articles:
-                    for article in news_articles[:3]:
-                        with st.expander(f"📄 {article['title'][:50]}..."):
-                            st.write(article['summary'][:200] + "...")
-                            if article['link']:
-                                st.markdown(f"[전체 기사 읽기]({article['link']})")
-                            st.caption(f"출처: {article['source']}")
-                else:
-                    st.info("뉴스 데이터를 불러오는 중입니다...")
-            
-            with col2:
-                # 주식 데이터 (질문에 종목이 포함된 경우)
-                if any(keyword in st.session_state.user_question.lower() for keyword in ["삼성", "테슬라", "애플"]):
-                    st.markdown("### 📊 주가 정보")
-                    
-                    # 종목 매핑
-                    ticker_map = {
-                        "삼성": "005930.KS",
-                        "테슬라": "TSLA", 
-                        "애플": "AAPL"
-                    }
-                    
-                    for keyword, ticker in ticker_map.items():
-                        if keyword in st.session_state.user_question.lower():
-                            stock_data = get_stock_data(ticker)
-                            if stock_data is not None:
-                                current_price = stock_data['Close'].iloc[-1]
-                                prev_price = stock_data['Close'].iloc[-2]
-                                change = current_price - prev_price
-                                change_pct = (change / prev_price) * 100
-                                
-                                st.metric(
-                                    f"{keyword.title()} 현재가",
-                                    f"${current_price:.2f}" if ticker != "005930.KS" else f"₩{current_price:,.0f}",
-                                    f"{change:+.2f} ({change_pct:+.2f}%)"
-                                )
-                                
-                                # 차트 표시
-                                chart = create_stock_chart(stock_data, ticker)
-                                st.plotly_chart(chart, use_container_width=True)
-                            break
-            
-            # 면책 조항
-            st.warning("⚠️ **투자 주의사항**: 본 AI 분석은 참고용 정보이며, 실제 투자 결정은 충분한 검토 후 본인 책임하에 하시기 바랍니다.")
-            
+                # 응답 표시
+                st.markdown('<div class="ai-response">', unsafe_allow_html=True)
+                st.markdown(response)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # 데이터 출처 표시
+                st.info(f"📊 **분석 기준**: 실시간 시장 데이터 + 최신 뉴스 + HyperCLOVA X AI | 분석 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                
+            except Exception as e:
+                progress_bar.empty()
+                status_text.empty()
+                
+                # 오류 메시지 표시
+                st.markdown('<div class="error-message">', unsafe_allow_html=True)
+                st.markdown(f"🚨 **실시간 분석 오류**\n\n{str(e)}")
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # 해결 방법 제시
+                st.markdown("### 🔧 문제 해결 방법")
+                st.markdown("""
+                1. **API 키 확인**: `.streamlit/secrets.toml` 파일에 올바른 API 키 설정
+                2. **네트워크 확인**: 인터넷 연결 상태 점검
+                3. **계정 상태**: 네이버 클라우드 플랫폼 계정 및 크레딧 확인
+                4. **앱 설정**: CLOVA Studio에서 테스트 앱 생성 확인
+                """)
         else:
-            st.warning("💬 질문을 입력해주세요.")
+            st.warning("💬 분석할 질문을 입력해주세요.")
     
-    # 차트 표시 (사이드바에서 선택한 경우)
-    if st.session_state.show_chart:
-        st.markdown(f"### 📊 {st.session_state.show_chart} 차트")
-        stock_data = get_stock_data(st.session_state.show_chart)
-        if stock_data is not None:
-            chart = create_stock_chart(stock_data, st.session_state.show_chart)
-            st.plotly_chart(chart, use_container_width=True)
-        st.session_state.show_chart = ""  # 초기화
-    
-    # 샘플 질문 (메인 영역)
-    if not st.session_state.user_question:
-        st.markdown("### 💡 샘플 질문")
-        
-        sample_questions = [
-            "삼성전자 주식 투자 전망을 분석해주세요",
-            "테슬라 주식의 장단점을 알려주세요", 
-            "AI 관련 주식 투자 전략은?",
-            "초보자를 위한 안전한 투자 방법",
-            "현재 시장에서 주목해야 할 섹터는?",
-            "ESG 투자의 장단점은 무엇인가요?"
-        ]
-        
-        cols = st.columns(2)
-        for i, question in enumerate(sample_questions):
-            with cols[i % 2]:
-                if st.button(question, key=f"main_sample_{i}"):
-                    st.session_state.selected_question = question
-                    st.rerun()
+    # 면책 조항 (강화)
+    st.warning("⚠️ **실시간 투자 분석 주의사항**: 본 분석은 실시간 데이터를 바탕으로 한 AI 분석 결과이며, 투자 권유가 아닙니다. 실제 투자 결정은 충분한 검토와 전문가 상담 후 본인 책임하에 하시기 바랍니다.")
 
 # 앱 실행
 if __name__ == "__main__":
