@@ -279,6 +279,27 @@ def main():
     
     # 면책조항 렌더링
     render_disclaimer()
+    
+    # 만든이 정보 추가
+    render_creator_info()
+
+def render_creator_info():
+    """만든이 정보 렌더링"""
+    st.markdown("---")
+    st.markdown(
+        """
+        <div style="text-align: center; padding: 2rem 0; color: #666; font-size: 0.9rem;">
+            <p style="margin: 0;">🏆 <strong>AI Festival 2025</strong> 출품작</p>
+            <p style="margin: 0.5rem 0 0 0;">
+                💻 Created by <strong style="color: #667eea; font-size: 1.1rem;">Rin.C</strong>
+            </p>
+            <p style="margin: 0.5rem 0 0 0; font-size: 0.8rem;">
+                🤖 Powered by HyperCLOVA X • 📊 Real-time Market Data • 🔴 Live Analysis
+            </p>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
 
 if __name__ == "__main__":
     main()
