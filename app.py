@@ -28,40 +28,77 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 스타일 설정
-st.markdown("""
-<style>
-.main-header {
-    font-size: 2.5rem;
-    font-weight: bold;
-    color: #1f77b4;
-    text-align: center;
-    margin-bottom: 2rem;
-}
-.ai-response {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 2rem;
-    border-radius: 1rem;
-    margin: 1rem 0;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-}
-.status-good {
-    background: #4CAF50;
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    margin: 0.5rem 0;
-}
-.status-bad {
-    background: #f44336;
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    margin: 0.5rem 0;
-}
-</style>
-""", unsafe_allow_html=True)
+# CSS 파일 로드
+def load_css():
+    """CSS 스타일 로드"""
+    try:
+        with open('styles.css', 'r', encoding='utf-8') as f:
+            css = f.read()
+        st.markdown(f'<style>{css}</style>', unsafe_allow_html=True)
+    except FileNotFoundError:
+        # CSS 파일이 없을 경우 기본 스타일 사용
+        st.markdown("""
+        <style>
+        .main-header {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #1f77b4;
+            text-align: center;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .ai-response {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 1rem;
+            margin: 1rem 0;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .status-good {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            margin: 0.5rem 0;
+            box-shadow: 0 4px 15px rgba(76,175,80,0.3);
+        }
+        .status-bad {
+            background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            margin: 0.5rem 0;
+            box-shadow: 0 4px 15px rgba(244,67,54,0.3);
+        }
+        .sample-question {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border: 1px solid #2196f3;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .sample-question:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(33,150,243,0.3);
+        }
+        .news-item {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
 # API 설정
 def get_api_key():
@@ -73,34 +110,50 @@ def get_api_key():
         # 환경변수에서 가져오기
         return os.getenv("CLOVA_STUDIO_API_KEY", "")
 
-# HyperCLOVA X 클라이언트
+# HyperCLOVA X 클라이언트 (수정된 버전)
 class HyperCLOVAXClient:
     def __init__(self):
         self.api_key = get_api_key()
-        # 올바른 엔드포인트 URL 설정
-        self.endpoint = "https://clovastudio.stream.ntruss.com/testapp/v1/chat-completions/HCX-003"
+        # 새로운 스트리밍 엔드포인트 사용
+        self.base_url = "https://clovastudio.stream.ntruss.com"
         
     def get_response(self, question: str) -> str:
-        """HyperCLOVA X API 호출"""
+        """HyperCLOVA X API 호출 (수정된 버전)"""
         if not self.api_key:
             return self._get_fallback_response(question)
         
         try:
-            # 새로운 HyperCLOVA X API 형식
+            # 올바른 헤더 설정 (문서 기준)
             headers = {
-                'X-NCP-CLOVASTUDIO-API-KEY': self.api_key,
-                'X-NCP-APIGW-API-KEY': self.api_key,
-                'Content-Type': 'application/json'
+                'Authorization': f'Bearer {self.api_key}',  # Bearer 토큰 방식
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             }
             
-            # 새로운 엔드포인트 사용
-            url = "https://clovastudio.stream.ntruss.com/testapp/v1/chat-completions/HCX-003"
+            # Chat Completions API 엔드포인트
+            url = f"{self.base_url}/testapp/v1/chat-completions/HCX-003"
             
             payload = {
                 'messages': [
                     {
                         'role': 'system',
-                        'content': '당신은 전문적인 투자 어드바이저입니다. 한국어로 정확하고 실용적인 투자 조언을 제공해주세요. 구체적인 데이터와 분석을 포함하여 답변해주세요.'
+                        'content': '''당신은 전문적인 AI 투자 어드바이저입니다. 
+한국어로 정확하고 실용적인 투자 조언을 제공해주세요. 
+다음 형식으로 답변해주세요:
+
+📊 **투자 분석 요약**
+[핵심 분석 내용]
+
+💡 **투자 포인트**  
+[주요 투자 근거]
+
+⚠️ **리스크 요인**
+[주의사항]
+
+📈 **투자 전략**
+[구체적 실행 방안]
+
+구체적인 데이터와 근거를 포함하여 답변해주세요.'''
                     },
                     {
                         'role': 'user',
@@ -109,14 +162,15 @@ class HyperCLOVAXClient:
                 ],
                 'topP': 0.8,
                 'topK': 0,
-                'maxTokens': 1000,
-                'temperature': 0.5,
+                'maxTokens': 1500,
+                'temperature': 0.3,  # 더 정확한 답변을 위해 낮춤
                 'repeatPenalty': 1.2,
                 'stopBefore': [],
                 'includeAiFilters': True,
                 'seed': 0
             }
             
+            # API 요청
             response = requests.post(
                 url,
                 headers=headers,
@@ -124,26 +178,42 @@ class HyperCLOVAXClient:
                 timeout=30
             )
             
+            # 응답 처리
             if response.status_code == 200:
                 result = response.json()
-                # HyperCLOVA X 응답 파싱
-                if 'result' in result and 'message' in result['result']:
-                    content = result['result']['message'].get('content', '')
+                
+                # 응답 파싱 (새로운 형식 적용)
+                if 'result' in result:
+                    if 'message' in result['result']:
+                        content = result['result']['message'].get('content', '')
+                    elif 'messages' in result['result'] and len(result['result']['messages']) > 0:
+                        content = result['result']['messages'][0].get('content', '')
+                    else:
+                        content = str(result['result'])
+                    
                     if content:
-                        return f"🤖 **HyperCLOVA X 분석 결과**\n\n{content}"
+                        return f"🤖 **HyperCLOVA X 전문 분석**\n\n{content}"
                     else:
                         raise Exception("응답 내용이 비어있습니다.")
                 else:
-                    raise Exception("응답 형식이 올바르지 않습니다.")
+                    raise Exception(f"응답 형식 오류: {result}")
+                    
             elif response.status_code == 401:
-                raise Exception("API 키 인증 실패: API 키를 다시 확인해주세요.")
+                raise Exception("API 키 인증 실패: API 키를 다시 확인해주세요")
             elif response.status_code == 403:
-                raise Exception("API 접근 권한 없음: 계정 상태를 확인해주세요.")
+                raise Exception("API 접근 권한 없음: 테스트 앱이 생성되었는지 확인해주세요")
             elif response.status_code == 429:
-                raise Exception("API 사용량 한도 초과: 잠시 후 다시 시도해주세요.")
+                raise Exception("API 사용량 한도 초과: 잠시 후 다시 시도해주세요")
+            elif response.status_code == 400:
+                error_detail = response.json() if response.content else "잘못된 요청"
+                raise Exception(f"요청 오류: {error_detail}")
             else:
-                raise Exception(f"API 호출 실패: {response.status_code} - {response.text}")
+                raise Exception(f"API 호출 실패: {response.status_code} - {response.text[:200]}")
                 
+        except requests.exceptions.ConnectTimeout:
+            return f"⚠️ **네트워크 연결 시간 초과**\n\n연결이 불안정합니다. 잠시 후 다시 시도해주세요.\n\n---\n\n{self._get_fallback_response(question)}"
+        except requests.exceptions.ConnectionError:
+            return f"⚠️ **네트워크 연결 오류**\n\n인터넷 연결을 확인해주세요.\n\n---\n\n{self._get_fallback_response(question)}"
         except Exception as e:
             logger.error(f"HyperCLOVA X API 오류: {str(e)}")
             return f"⚠️ **HyperCLOVA X 연결 오류**\n\n{str(e)}\n\n---\n\n{self._get_fallback_response(question)}"
@@ -278,8 +348,32 @@ def get_news_data():
     except:
         return []
 
+# 차트 생성 함수
+def create_stock_chart(data, ticker):
+    """주식 차트 생성"""
+    fig = go.Figure(data=go.Candlestick(
+        x=data.index,
+        open=data['Open'],
+        high=data['High'],
+        low=data['Low'],
+        close=data['Close'],
+        name=ticker
+    ))
+    
+    fig.update_layout(
+        title=f"{ticker} 주가 차트 (6개월)",
+        yaxis_title="Price",
+        xaxis_title="Date",
+        template="plotly_white"
+    )
+    
+    return fig
+
 # 메인 애플리케이션
 def main():
+    # CSS 로드
+    load_css()
+    
     # 헤더
     st.markdown('<div class="main-header">🤖 HyperCLOVA X AI 투자 어드바이저</div>', unsafe_allow_html=True)
     
@@ -291,7 +385,6 @@ def main():
         st.header("🏆 AI Festival 2025")
         
         # API 상태
-        api_status = "연결됨" if ai_client.api_key else "미설정"
         if ai_client.api_key:
             st.markdown('<div class="status-good">✅ HyperCLOVA X 연결됨</div>', unsafe_allow_html=True)
         else:
@@ -314,6 +407,16 @@ def main():
                 st.rerun()
         
         st.markdown("---")
+        
+        # 빠른 종목 조회
+        st.markdown("### 📊 빠른 종목 조회")
+        quick_tickers = ["AAPL", "TSLA", "NVDA", "005930.KS"]
+        selected_ticker = st.selectbox("종목 선택", quick_tickers)
+        
+        if st.button("차트 보기", use_container_width=True):
+            st.session_state.show_chart = selected_ticker
+        
+        st.markdown("---")
         st.caption("🕐 실시간 업데이트")
         st.caption(f"마지막 업데이트: {datetime.now().strftime('%H:%M:%S')}")
     
@@ -325,6 +428,8 @@ def main():
         st.session_state.user_question = ""
     if 'selected_question' not in st.session_state:
         st.session_state.selected_question = ""
+    if 'show_chart' not in st.session_state:
+        st.session_state.show_chart = ""
     
     # 선택된 질문이 있으면 업데이트
     if st.session_state.selected_question:
@@ -423,6 +528,10 @@ def main():
                                     f"${current_price:.2f}" if ticker != "005930.KS" else f"₩{current_price:,.0f}",
                                     f"{change:+.2f} ({change_pct:+.2f}%)"
                                 )
+                                
+                                # 차트 표시
+                                chart = create_stock_chart(stock_data, ticker)
+                                st.plotly_chart(chart, use_container_width=True)
                             break
             
             # 면책 조항
@@ -430,6 +539,15 @@ def main():
             
         else:
             st.warning("💬 질문을 입력해주세요.")
+    
+    # 차트 표시 (사이드바에서 선택한 경우)
+    if st.session_state.show_chart:
+        st.markdown(f"### 📊 {st.session_state.show_chart} 차트")
+        stock_data = get_stock_data(st.session_state.show_chart)
+        if stock_data is not None:
+            chart = create_stock_chart(stock_data, st.session_state.show_chart)
+            st.plotly_chart(chart, use_container_width=True)
+        st.session_state.show_chart = ""  # 초기화
     
     # 샘플 질문 (메인 영역)
     if not st.session_state.user_question:
