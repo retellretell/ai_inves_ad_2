@@ -753,3 +753,435 @@ def render_ai_stock_recommender():
                 # 추천 종목 카드 형태로 표시
                 for idx, (_, stock) in enumerate(top_recommendations.iterrows()):
                     with st.container():
+                        col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
+                        
+                        with col1:
+                            st.markdown(f"### {idx + 1}위")
+                        
+                        with col2:
+                            st.markdown(f"**{stock['ticker']}**")
+                            st.caption(f"현재가: {stock['current_price']:,.0f}")
+                        
+                        with col3:
+                            st.metric("AI 점수", f"{stock['total_score']:.1f}/100")
+                            st.caption(f"RSI: {stock['rsi']:.1f}")
+                        
+                        with col4:
+                            st.metric("기술적 신호", stock['macd_signal'])
+                            st.caption(f"20일선 대비: {stock['price_vs_sma20']:+.1f}%")
+                        
+                        # 상세 분석 버튼
+                        if st.button(f"{stock['ticker']} 상세 분석", key=f"detail_{idx}"):
+                            show_detailed_stock_analysis(stock)
+                        
+                        st.divider()
+                
+                # 종합 차트
+                create_recommendation_chart(top_recommendations)
+            else:
+                st.warning("분석할 수 있는 종목이 없습니다.")
+        else:
+            st.warning("분석할 종목을 입력해주세요.")
+
+def render_strategy_optimizer():
+    """전략 최적화 렌더링"""
+    st.markdown("### ⚙️ 전략 최적화")
+    
+    st.info("AI가 최적의 매개변수를 찾아드립니다!")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        ticker = st.text_input("최적화할 종목", value="005930.KS")
+        strategy_type = st.selectbox("최적화할 전략", ["MovingAverage", "RSI"])
+    
+    with col2:
+        period = st.selectbox("최적화 기간", ["1y", "2y", "3y"])
+        metric = st.selectbox("최적화 기준", ["샤프 비율", "총 수익률", "최대 낙폭"])
+    
+    if st.button("전략 최적화 실행", type="primary"):
+        optimizer = StrategyOptimizer()
+        
+        with st.spinner("AI가 최적 매개변수를 찾고 있습니다..."):
+            # 데이터 수집
+            stock = yf.Ticker(ticker)
+            data = stock.history(period=period)
+            
+            if not data.empty:
+                # 최적화 실행
+                optimization_result = optimizer.optimize_strategy(data, strategy_type)
+                
+                if optimization_result['best_result']:
+                    result = optimization_result['best_result']
+                    params = optimization_result['best_params']
+                    
+                    st.success("최적화 완료!")
+                    
+                    # 최적 매개변수 표시
+                    st.markdown("#### 🎯 최적 매개변수")
+                    
+                    param_cols = st.columns(len(params))
+                    for i, (param_name, param_value) in enumerate(params.items()):
+                        with param_cols[i]:
+                            st.metric(param_name.replace('_', ' ').title(), str(param_value))
+                    
+                    # 최적화 결과 표시
+                    display_backtest_results(result, ticker, f"최적화된 {strategy_type}")
+                else:
+                    st.error("최적화에 실패했습니다.")
+            else:
+                st.error("데이터를 가져올 수 없습니다.")
+
+def render_performance_comparison():
+    """성과 비교 렌더링"""
+    st.markdown("### 📈 전략별 성과 비교")
+    
+    st.info("여러 전략의 성과를 동시에 비교해보세요!")
+    
+    # 비교할 전략들 설정
+    ticker = st.text_input("비교할 종목", value="005930.KS")
+    period = st.selectbox("비교 기간", ["1y", "2y", "3y"])
+    
+    strategies_to_compare = st.multiselect(
+        "비교할 전략 선택",
+        ["이동평균 교차", "RSI", "MACD", "볼린저 밴드"],
+        default=["이동평균 교차", "RSI"]
+    )
+    
+    if st.button("성과 비교 실행", type="primary"):
+        if ticker and strategies_to_compare:
+            with st.spinner("전략별 백테스트 실행 중..."):
+                # 데이터 수집
+                stock = yf.Ticker(ticker)
+                data = stock.history(period=period)
+                
+                if not data.empty:
+                    results = {}
+                    
+                    # 각 전략별 백테스트 실행
+                    for strategy_name in strategies_to_compare:
+                        strategy = create_strategy(strategy_name)
+                        engine = BacktestEngine()
+                        
+                        try:
+                            result = engine.run_backtest(data, strategy)
+                            results[strategy_name] = result
+                        except Exception as e:
+                            st.warning(f"{strategy_name} 전략 실행 실패: {str(e)}")
+                    
+                    if results:
+                        # 비교 차트 생성
+                        create_performance_comparison_chart(results)
+                        
+                        # 성과 요약 테이블
+                        create_performance_summary_table(results)
+                else:
+                    st.error("데이터를 가져올 수 없습니다.")
+
+def display_backtest_results(result: BacktestResult, ticker: str, strategy_name: str):
+    """백테스트 결과 표시"""
+    st.markdown(f"#### 📊 {ticker} - {strategy_name} 백테스트 결과")
+    
+    # 주요 성과 지표
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("총 수익률", f"{result.total_return:.2%}")
+    with col2:
+        st.metric("연간 수익률", f"{result.annual_return:.2%}")
+    with col3:
+        st.metric("샤프 비율", f"{result.sharpe_ratio:.2f}")
+    with col4:
+        st.metric("최대 낙폭", f"{result.max_drawdown:.2%}")
+    
+    col5, col6, col7, col8 = st.columns(4)
+    
+    with col5:
+        st.metric("승률", f"{result.win_rate:.1%}")
+    with col6:
+        st.metric("손익비", f"{result.profit_factor:.2f}")
+    with col7:
+        st.metric("총 거래 횟수", f"{result.total_trades}")
+    with col8:
+        st.metric("평균 보유기간", f"{result.avg_holding_period:.1f}일")
+    
+    # 벤치마크 비교
+    if result.benchmark_return != 0:
+        outperformance = result.total_return - result.benchmark_return
+        st.metric("벤치마크 대비 초과수익", f"{outperformance:.2%}")
+    
+    # 수익 곡선 차트
+    create_equity_curve_chart(result.equity_curve, result.benchmark_return)
+    
+    # 거래 내역
+    if result.trades:
+        st.markdown("#### 📋 거래 내역 (최근 10건)")
+        trades_df = pd.DataFrame(result.trades[-10:])
+        if not trades_df.empty:
+            st.dataframe(trades_df)
+
+def show_detailed_stock_analysis(stock_data: Dict):
+    """종목 상세 분석 표시"""
+    st.markdown(f"#### 📊 {stock_data['ticker']} 상세 분석")
+    
+    # 점수 분해
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**세부 점수**")
+        scores = {
+            '기술적 분석': stock_data['technical_score'],
+            '모멘텀': stock_data['momentum_score'],
+            '변동성': stock_data['volatility_score'],
+            '거래량': stock_data['volume_score'],
+            '추세': stock_data['trend_score']
+        }
+        
+        for score_name, score_value in scores.items():
+            st.metric(score_name, f"{score_value:.1f}/100")
+    
+    with col2:
+        st.markdown("**기술적 지표**")
+        st.metric("RSI", f"{stock_data['rsi']:.1f}")
+        st.metric("20일선 대비", f"{stock_data['price_vs_sma20']:+.1f}%")
+        st.metric("50일선 대비", f"{stock_data['price_vs_sma50']:+.1f}%")
+        st.metric("볼린저밴드 위치", f"{stock_data['bb_position']:.1f}%")
+
+def create_strategy(strategy_name: str):
+    """전략 객체 생성"""
+    if strategy_name == "이동평균 교차":
+        return MovingAverageCrossStrategy()
+    elif strategy_name == "RSI":
+        return RSIStrategy()
+    elif strategy_name == "MACD":
+        return MACDStrategy()
+    elif strategy_name == "볼린저 밴드":
+        return BollingerBandStrategy()
+
+def create_equity_curve_chart(equity_curve: pd.Series, benchmark_return: float):
+    """수익 곡선 차트 생성"""
+    fig = go.Figure()
+    
+    # 전략 수익 곡선
+    fig.add_trace(go.Scatter(
+        x=equity_curve.index,
+        y=equity_curve.values,
+        mode='lines',
+        name='전략 수익',
+        line=dict(color='blue', width=2)
+    ))
+    
+    # 벤치마크 비교선 (단순화)
+    if benchmark_return != 0:
+        initial_value = equity_curve.iloc[0]
+        final_benchmark_value = initial_value * (1 + benchmark_return)
+        
+        benchmark_line = np.linspace(initial_value, final_benchmark_value, len(equity_curve))
+        
+        fig.add_trace(go.Scatter(
+            x=equity_curve.index,
+            y=benchmark_line,
+            mode='lines',
+            name='벤치마크',
+            line=dict(color='red', width=1, dash='dash')
+        ))
+    
+    fig.update_layout(
+        title="포트폴리오 가치 변화",
+        xaxis_title="날짜",
+        yaxis_title="포트폴리오 가치 (원)",
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+def create_recommendation_chart(recommendations: pd.DataFrame):
+    """추천 종목 차트 생성"""
+    if recommendations.empty:
+        return
+    
+    fig = go.Figure()
+    
+    # 점수별 막대 차트
+    fig.add_trace(go.Bar(
+        x=recommendations['ticker'],
+        y=recommendations['total_score'],
+        text=recommendations['total_score'].round(1),
+        textposition='outside',
+        marker_color=px.colors.sequential.Blues_r
+    ))
+    
+    fig.update_layout(
+        title="AI 추천 점수",
+        xaxis_title="종목",
+        yaxis_title="AI 점수",
+        height=400
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # 세부 점수 비교 차트
+    score_categories = ['technical_score', 'momentum_score', 'volatility_score', 'volume_score', 'trend_score']
+    
+    fig2 = go.Figure()
+    
+    for category in score_categories:
+        fig2.add_trace(go.Scatter(
+            x=recommendations['ticker'],
+            y=recommendations[category],
+            mode='lines+markers',
+            name=category.replace('_score', '').title(),
+            line=dict(width=2)
+        ))
+    
+    fig2.update_layout(
+        title="세부 점수 비교",
+        xaxis_title="종목",
+        yaxis_title="점수",
+        height=400,
+        showlegend=True
+    )
+    
+    st.plotly_chart(fig2, use_container_width=True)
+
+def create_performance_comparison_chart(results: Dict[str, BacktestResult]):
+    """성과 비교 차트 생성"""
+    # 수익 곡선 비교
+    fig = go.Figure()
+    
+    colors = ['blue', 'red', 'green', 'orange', 'purple']
+    
+    for i, (strategy_name, result) in enumerate(results.items()):
+        # 수익률로 정규화
+        normalized_curve = result.equity_curve / result.equity_curve.iloc[0] * 100
+        
+        fig.add_trace(go.Scatter(
+            x=result.equity_curve.index,
+            y=normalized_curve,
+            mode='lines',
+            name=strategy_name,
+            line=dict(color=colors[i % len(colors)], width=2)
+        ))
+    
+    fig.update_layout(
+        title="전략별 수익 곡선 비교 (정규화)",
+        xaxis_title="날짜",
+        yaxis_title="수익률 (%)",
+        height=500
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+def create_performance_summary_table(results: Dict[str, BacktestResult]):
+    """성과 요약 테이블 생성"""
+    summary_data = []
+    
+    for strategy_name, result in results.items():
+        summary_data.append({
+            '전략': strategy_name,
+            '총 수익률': f"{result.total_return:.2%}",
+            '연간 수익률': f"{result.annual_return:.2%}",
+            '변동성': f"{result.volatility:.2%}",
+            '샤프 비율': f"{result.sharpe_ratio:.2f}",
+            '최대 낙폭': f"{result.max_drawdown:.2%}",
+            '승률': f"{result.win_rate:.1%}",
+            '거래 횟수': result.total_trades
+        })
+    
+    summary_df = pd.DataFrame(summary_data)
+    st.markdown("#### 📋 전략별 성과 요약")
+    st.dataframe(summary_df, use_container_width=True)
+    
+    # 최고 성과 전략 하이라이트
+    best_strategy = max(results.items(), key=lambda x: x[1].sharpe_ratio)
+    st.success(f"🏆 최고 성과 전략: **{best_strategy[0]}** (샤프 비율: {best_strategy[1].sharpe_ratio:.2f})")
+
+# 포트폴리오 시뮬레이터 추가
+class PortfolioSimulator:
+    """포트폴리오 시뮬레이터"""
+    
+    def __init__(self):
+        self.simulation_results = []
+    
+    def monte_carlo_simulation(self, returns: pd.Series, days: int = 252, simulations: int = 1000) -> Dict:
+        """몬테카를로 시뮬레이션"""
+        
+        mean_return = returns.mean()
+        std_return = returns.std()
+        
+        simulation_results = []
+        
+        for _ in range(simulations):
+            # 랜덤 수익률 생성
+            random_returns = np.random.normal(mean_return, std_return, days)
+            
+            # 누적 수익률 계산
+            cumulative_returns = (1 + random_returns).cumprod()
+            final_return = cumulative_returns[-1] - 1
+            
+            simulation_results.append(final_return)
+        
+        simulation_results = np.array(simulation_results)
+        
+        return {
+            'mean_return': simulation_results.mean(),
+            'std_return': simulation_results.std(),
+            'percentile_5': np.percentile(simulation_results, 5),
+            'percentile_95': np.percentile(simulation_results, 95),
+            'probability_positive': (simulation_results > 0).mean(),
+            'var_5': np.percentile(simulation_results, 5),
+            'simulation_data': simulation_results
+        }
+
+def render_portfolio_simulator():
+    """포트폴리오 시뮬레이터 렌더링"""
+    st.markdown("### 🎲 포트폴리오 시뮬레이션")
+    
+    ticker = st.text_input("시뮬레이션할 종목", value="005930.KS")
+    days = st.slider("시뮬레이션 기간 (일)", 30, 365, 252)
+    simulations = st.slider("시뮬레이션 횟수", 100, 5000, 1000)
+    
+    if st.button("몬테카를로 시뮬레이션 실행"):
+        with st.spinner("시뮬레이션 실행 중..."):
+            # 데이터 수집
+            stock = yf.Ticker(ticker)
+            data = stock.history(period="2y")
+            
+            if not data.empty:
+                returns = data['Close'].pct_change().dropna()
+                
+                simulator = PortfolioSimulator()
+                results = simulator.monte_carlo_simulation(returns, days, simulations)
+                
+                # 결과 표시
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("예상 수익률", f"{results['mean_return']:.2%}")
+                with col2:
+                    st.metric("수익 확률", f"{results['probability_positive']:.1%}")
+                with col3:
+                    st.metric("5% VaR", f"{results['var_5']:.2%}")
+                with col4:
+                    st.metric("95% 신뢰구간", f"{results['percentile_95']:.2%}")
+                
+                # 시뮬레이션 결과 히스토그램
+                fig = go.Figure(data=[go.Histogram(x=results['simulation_data'])])
+                fig.update_layout(
+                    title=f"{ticker} {days}일 수익률 분포",
+                    xaxis_title="수익률",
+                    yaxis_title="빈도",
+                    height=400
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+# 메인 통합 함수
+def integrate_backtesting_features():
+    """백테스팅 기능을 메인 앱에 통합"""
+    if st.session_state.get('show_backtesting', False):
+        render_backtesting_system()
+        st.markdown("---")
+        render_portfolio_simulator()
+
+if __name__ == "__main__":
+    render_backtesting_system()
