@@ -18,9 +18,6 @@ from dataclasses import dataclass
 from enum import Enum
 import uuid
 import requests
-import smtplib
-from email.mime.text import MimeText
-from email.mime.multipart import MIMEMultipart
 import math
 import warnings
 warnings.filterwarnings('ignore')
