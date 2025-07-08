@@ -1,6 +1,6 @@
 """
 app.py - 수정된 메인 애플리케이션
-HyperCLOVA X 기반 AI 투자 어드바이저 + 모든 고급 기능 통합
+HyperCLOVA X 기반 AI 투자 어드바이저 + 통합 실시간 알림 시스템
 """
 
 import streamlit as st
@@ -19,6 +19,16 @@ import logging
 import uuid
 import sys
 import traceback
+
+# 통합 실시간 알림 시스템 import
+from unified_realtime_alerts import (
+    integrate_unified_realtime_alerts,
+    init_unified_alert_system,
+    add_unified_alert,
+    UnifiedRealtimeAlertSystem,
+    AlertType,
+    AlertPriority
+)
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -424,89 +434,6 @@ class HyperCLOVAXClient:
         return "\n".join(context)
 
 # 고급 기능 클래스들
-class RealtimeAlerts:
-    """실시간 알림 시스템"""
-    
-    def __init__(self):
-        if 'alerts' not in st.session_state:
-            st.session_state.alerts = []
-    
-    def add_alert(self, alert_type, title, message, priority="MEDIUM"):
-        """알림 추가"""
-        alert = {
-            'id': str(uuid.uuid4())[:8],
-            'type': alert_type,
-            'title': title,
-            'message': message,
-            'priority': priority,
-            'timestamp': datetime.now(),
-            'read': False
-        }
-        st.session_state.alerts.insert(0, alert)
-        
-        # 최대 50개 유지
-        if len(st.session_state.alerts) > 50:
-            st.session_state.alerts = st.session_state.alerts[:50]
-    
-    def check_portfolio_alerts(self, portfolio_metrics):
-        """포트폴리오 알림 체크"""
-        if not portfolio_metrics:
-            return
-        
-        # 예시 알림 (실제로는 더 복잡한 로직)
-        total_return = portfolio_metrics.get('total_return_pct', 0)
-        
-        if total_return <= -15:
-            self.add_alert(
-                "RISK", 
-                "포트폴리오 큰 손실", 
-                f"현재 {total_return:.1f}% 손실 상태입니다.", 
-                "HIGH"
-            )
-        elif total_return >= 25:
-            self.add_alert(
-                "OPPORTUNITY", 
-                "목표 수익 달성", 
-                f"현재 {total_return:.1f}% 수익 상태입니다.", 
-                "HIGH"
-            )
-    
-    def render_alerts(self):
-        """알림 렌더링"""
-        st.markdown("### 🔔 실시간 알림")
-        
-        if not st.session_state.alerts:
-            st.info("알림이 없습니다.")
-            return
-        
-        # 읽지 않은 알림 수
-        unread_count = sum(1 for alert in st.session_state.alerts if not alert['read'])
-        if unread_count > 0:
-            st.markdown(f"**📬 읽지 않은 알림: {unread_count}개**")
-        
-        # 최근 5개 알림 표시
-        for alert in st.session_state.alerts[:5]:
-            priority_color = {
-                "HIGH": "#ff4444",
-                "MEDIUM": "#ffaa00", 
-                "LOW": "#4CAF50"
-            }.get(alert['priority'], "#999")
-            
-            read_style = "opacity: 0.6;" if alert['read'] else ""
-            
-            st.markdown(f"""
-            <div style="background: #f8f9fa; padding: 1rem; border-radius: 0.5rem; 
-                        margin: 0.5rem 0; border-left: 4px solid {priority_color}; {read_style}">
-                <strong>{alert['title']}</strong>
-                <span style="float: right; font-size: 0.8rem; color: #666;">
-                    {alert['timestamp'].strftime('%H:%M')}
-                </span><br>
-                <div style="margin-top: 0.5rem; color: #666;">
-                    {alert['message']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
 class AdvancedFeatures:
     """고급 투자자 기능"""
     
@@ -529,12 +456,28 @@ class AdvancedFeatures:
                     if 'portfolio' not in st.session_state:
                         st.session_state.portfolio = []
                     
-                    st.session_state.portfolio.append({
+                    new_holding = {
                         'ticker': ticker,
                         'shares': shares,
                         'buy_price': buy_price,
                         'added_at': datetime.now()
-                    })
+                    }
+                    
+                    st.session_state.portfolio.append(new_holding)
+                    
+                    # 통합 알림 시스템에 자동 알림 생성
+                    try:
+                        alert_system = init_unified_alert_system()
+                        alert_system.analyze_stock_for_alerts(ticker, new_holding)
+                        add_unified_alert(
+                            alert_type="투자 기회",
+                            title=f"{ticker} 포트폴리오 추가됨",
+                            message=f"{ticker}가 포트폴리오에 추가되었습니다. 실시간 모니터링이 시작됩니다.",
+                            ticker=ticker
+                        )
+                    except Exception as e:
+                        logger.warning(f"알림 생성 실패: {e}")
+                    
                     st.success(f"{ticker} 추가됨!")
         
         # 포트폴리오 표시
@@ -573,6 +516,19 @@ class AdvancedFeatures:
                     with col5:
                         color = "🟢" if profit_rate >= 0 else "🔴"
                         st.write(f"{color} {profit_rate:+.1f}%")
+                        
+                        # 큰 변동 시 자동 알림
+                        if abs(profit_rate) >= 10:
+                            try:
+                                alert_type = "투자 기회" if profit_rate > 0 else "리스크 경고"
+                                add_unified_alert(
+                                    alert_type=alert_type,
+                                    title=f"{holding['ticker']} 큰 변동 감지",
+                                    message=f"{holding['ticker']}가 {profit_rate:+.1f}% 변동했습니다.",
+                                    ticker=holding['ticker']
+                                )
+                            except:
+                                pass
                     
                     with col6:
                         if st.button("제거", key=f"remove_{i}"):
@@ -606,12 +562,24 @@ class AdvancedFeatures:
                 with col4:
                     st.metric("수익률", f"{total_return_pct:+.2f}%")
                 
-                # 알림 체크
-                alerts = RealtimeAlerts()
-                alerts.check_portfolio_alerts({
-                    'total_return_pct': total_return_pct,
-                    'total_profit': total_profit
-                })
+                # 포트폴리오 상태 기반 자동 알림
+                try:
+                    if total_return_pct <= -15:
+                        add_unified_alert(
+                            alert_type="리스크 경고",
+                            title="포트폴리오 큰 손실",
+                            message=f"전체 포트폴리오가 {total_return_pct:.1f}% 손실 상태입니다.",
+                            ticker=None
+                        )
+                    elif total_return_pct >= 25:
+                        add_unified_alert(
+                            alert_type="투자 기회",
+                            title="포트폴리오 목표 수익 달성",
+                            message=f"전체 포트폴리오가 {total_return_pct:.1f}% 수익 상태입니다.",
+                            ticker=None
+                        )
+                except:
+                    pass
     
     def render_technical_analysis(self):
         """기술적 분석"""
@@ -688,6 +656,25 @@ class AdvancedFeatures:
                     with col2:
                         rsi_signal = "과매수" if current_rsi > 70 else "과매도" if current_rsi < 30 else "중립"
                         st.metric("RSI", f"{current_rsi:.1f} ({rsi_signal})")
+                        
+                        # RSI 기반 자동 알림
+                        try:
+                            if current_rsi > 70:
+                                add_unified_alert(
+                                    alert_type="리스크 경고",
+                                    title=f"{ticker} 과매수 구간",
+                                    message=f"{ticker}의 RSI가 {current_rsi:.1f}로 과매수 구간입니다.",
+                                    ticker=ticker
+                                )
+                            elif current_rsi < 30:
+                                add_unified_alert(
+                                    alert_type="투자 기회",
+                                    title=f"{ticker} 과매도 구간",
+                                    message=f"{ticker}의 RSI가 {current_rsi:.1f}로 과매도 구간입니다.",
+                                    ticker=ticker
+                                )
+                        except:
+                            pass
                     
                     with col3:
                         volatility = data['Close'].pct_change().std() * 100
@@ -754,6 +741,18 @@ class BacktestingEngine:
                         
                         # 결과 표시
                         self._display_backtest_results(results, ticker, strategy)
+                        
+                        # 백테스트 결과 기반 자동 알림
+                        try:
+                            if results['total_return'] > 20:
+                                add_unified_alert(
+                                    alert_type="투자 기회",
+                                    title=f"{strategy} 전략 성공",
+                                    message=f"{ticker}에서 {strategy} 전략으로 {results['total_return']:.1f}% 수익 가능",
+                                    ticker=ticker
+                                )
+                        except:
+                            pass
                         
                 except Exception as e:
                     st.error(f"백테스트 오류: {e}")
@@ -962,6 +961,17 @@ class MarketingCTA:
                         'timestamp': datetime.now().isoformat()
                     }
                     
+                    # 상담 신청 완료 알림
+                    try:
+                        add_unified_alert(
+                            alert_type="투자 기회",
+                            title="전문가 상담 신청 완료",
+                            message=f"{name}님의 상담 신청이 완료되었습니다. 24시간 내 연락드리겠습니다.",
+                            ticker=None
+                        )
+                    except:
+                        pass
+                    
                     st.success("✅ 상담 신청이 완료되었습니다!")
                     st.info("📞 영업일 기준 24시간 내에 연락드리겠습니다.")
                     
@@ -1025,10 +1035,12 @@ class IntegratedInvestmentAdvisor:
     def __init__(self):
         self.session_id = self._init_session()
         self.ai_client = HyperCLOVAXClient()
-        self.alerts = RealtimeAlerts()
         self.advanced_features = AdvancedFeatures()
         self.backtesting = BacktestingEngine()
         self.marketing = MarketingCTA()
+        
+        # 통합 알림 시스템 초기화
+        self.alert_system = init_unified_alert_system()
         
     def _init_session(self) -> str:
         """세션 초기화"""
@@ -1079,11 +1091,11 @@ class IntegratedInvestmentAdvisor:
         # 사이드바 렌더링
         self._render_sidebar(market_data)
         
-        # 메인 탭 구성
+        # 메인 탭 구성 - 통합 알림 시스템 포함
         main_tabs = st.tabs([
             "🏠 홈", 
             "🤖 AI 분석", 
-            "🔔 실시간 알림", 
+            "🔔 통합 알림 센터", 
             "🚀 고급 기능", 
             "📊 백테스팅",
             "📈 기술적 분석"
@@ -1097,7 +1109,8 @@ class IntegratedInvestmentAdvisor:
             self._render_ai_analysis_content(market_data, news_data)
         
         with main_tabs[2]:
-            self.alerts.render_alerts()
+            # 통합 실시간 알림 시스템
+            integrate_unified_realtime_alerts()
         
         with main_tabs[3]:
             self.advanced_features.render_portfolio_analyzer()
@@ -1118,9 +1131,17 @@ class IntegratedInvestmentAdvisor:
         """헤더 렌더링"""
         st.markdown('<div class="main-header">🤖 HyperCLOVA X AI 투자 어드바이저</div>', unsafe_allow_html=True)
         
+        # 알림 개수 표시
+        try:
+            alert_stats = self.alert_system.get_alert_statistics()
+            unread_count = alert_stats.get('unread', 0)
+            alert_badge = f" 🔔 {unread_count}개 알림" if unread_count > 0 else ""
+        except:
+            alert_badge = ""
+        
         st.markdown(f"""
         <p style="text-align: center; color: #666; font-size: 1.1rem;">
-            🔴 실시간 분석 • 📊 Live Market Data • 🚀 모든 기능 활성화
+            🔴 실시간 분석 • 📊 Live Market Data • 🚀 모든 기능 활성화{alert_badge}
         </p>
         <p style="text-align: center; color: #999; font-size: 0.9rem;">
             📅 {current_time.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")}
@@ -1138,18 +1159,45 @@ class IntegratedInvestmentAdvisor:
             else:
                 st.markdown('<div class="status-bad">❌ API 키 미설정</div>', unsafe_allow_html=True)
             
+            # 알림 상태
+            try:
+                alert_stats = self.alert_system.get_alert_statistics()
+                total_alerts = alert_stats.get('total', 0)
+                unread_alerts = alert_stats.get('unread', 0)
+                
+                if unread_alerts > 0:
+                    st.markdown(f'<div class="status-good">🔔 새 알림 {unread_alerts}개</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="status-good">✅ 알림 시스템 활성화</div>', unsafe_allow_html=True)
+            except:
+                st.markdown('<div class="status-good">✅ 알림 시스템 준비</div>', unsafe_allow_html=True)
+            
             st.markdown("---")
             
             # 실시간 시장 현황
             st.markdown("### 📊 실시간 시장 현황")
             if market_data:
                 for name, data in market_data.items():
+                    change_color = "normal" if abs(data['change']) < 2 else "inverse"
                     st.metric(
                         name,
                         f"{data['current']:.2f}",
                         f"{data['change']:+.2f}%",
-                        delta_color="normal"
+                        delta_color=change_color
                     )
+                    
+                    # 큰 변동 시 자동 알림
+                    if abs(data['change']) >= 3:
+                        try:
+                            alert_type = "투자 기회" if data['change'] > 0 else "리스크 경고"
+                            add_unified_alert(
+                                alert_type=alert_type,
+                                title=f"{name} 큰 변동",
+                                message=f"{name}이 {data['change']:+.1f}% 변동했습니다.",
+                                ticker=name
+                            )
+                        except:
+                            pass
             else:
                 st.info("시장 데이터 로딩 중...")
             
@@ -1170,6 +1218,22 @@ class IntegratedInvestmentAdvisor:
                     st.rerun()
             
             st.markdown("---")
+            
+            # 빠른 알림 생성 (데모용)
+            if st.button("🎯 데모 알림 생성", key="quick_demo", use_container_width=True):
+                try:
+                    add_unified_alert(
+                        alert_type="투자 기회",
+                        title="데모 알림",
+                        message=f"테스트 알림이 생성되었습니다. ({datetime.now().strftime('%H:%M:%S')})",
+                        ticker="DEMO"
+                    )
+                    st.success("데모 알림 생성됨!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"알림 생성 실패: {e}")
+            
             st.caption(f"🔴 실시간 업데이트: {datetime.now().strftime('%H:%M:%S')}")
     
     def _render_home_content(self, market_data, news_data):
@@ -1179,7 +1243,7 @@ class IntegratedInvestmentAdvisor:
         # 기능 소개 카드
         st.markdown("#### 🌟 주요 기능")
         
-        feature_cols = st.columns(3)
+        feature_cols = st.columns(4)
         
         features = [
             {
@@ -1189,13 +1253,18 @@ class IntegratedInvestmentAdvisor:
             },
             {
                 "icon": "🔔",
-                "title": "실시간 알림",
+                "title": "통합 알림 센터",
                 "desc": "24/7 포트폴리오 모니터링"
             },
             {
                 "icon": "📊",
                 "title": "백테스팅",
                 "desc": "전략 검증 및 최적화"
+            },
+            {
+                "icon": "📈",
+                "title": "기술적 분석",
+                "desc": "차트 패턴 및 지표 분석"
             }
         ]
         
@@ -1235,6 +1304,29 @@ class IntegratedInvestmentAdvisor:
                     if article.get('summary'):
                         st.caption(f"{article['summary'][:100]}...")
                     st.caption(f"출처: {article.get('source', 'News')} | {article.get('published', '최근')}")
+        
+        # 최근 알림 미리보기
+        try:
+            alert_stats = self.alert_system.get_alert_statistics()
+            recent_alerts = alert_stats.get('recent', [])
+            
+            if recent_alerts:
+                st.markdown("#### 🔔 최근 알림")
+                for alert in recent_alerts[:3]:
+                    priority_icons = {"긴급": "🚨", "높음": "⚠️", "중간": "📌", "낮음": "💡"}
+                    icon = priority_icons.get(alert.get('priority', '중간'), "📌")
+                    
+                    st.markdown(f"""
+                    <div style="background: #f8f9fa; padding: 0.8rem; border-radius: 0.5rem; 
+                                margin: 0.3rem 0; border-left: 3px solid #2196f3;">
+                        {icon} {alert.get('title', '')}
+                        <span style="float: right; font-size: 0.8rem; color: #999;">
+                            {alert.get('timestamp', datetime.now()).strftime('%H:%M') if hasattr(alert.get('timestamp', ''), 'strftime') else '최근'}
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+        except:
+            pass
         
         # 마케팅 CTA
         self.marketing.show_consultation_cta()
@@ -1340,6 +1432,17 @@ class IntegratedInvestmentAdvisor:
                 st.markdown(response)
                 st.markdown('</div>', unsafe_allow_html=True)
                 
+                # 분석 완료 알림 생성
+                try:
+                    add_unified_alert(
+                        alert_type="투자 기회",
+                        title="AI 분석 완료",
+                        message=f"'{st.session_state.user_question[:30]}...' 질문에 대한 AI 분석이 완료되었습니다.",
+                        ticker=portfolio_info.get('ticker') if portfolio_info else None
+                    )
+                except:
+                    pass
+                
                 # 분석 요약
                 st.markdown(f"""
                 <div style="background: #e8f5e8; padding: 0.5rem; border-radius: 0.3rem; margin: 0.5rem 0;">
@@ -1388,11 +1491,27 @@ class IntegratedInvestmentAdvisor:
                                 current_price = current_data['Close'].iloc[-1]
                                 profit_rate = ((current_price - portfolio_info['buy_price']) / portfolio_info['buy_price']) * 100
                                 
-                                if profit_rate < -15:
-                                    self.marketing.show_consultation_cta("high_loss")
-                                elif profit_rate > 25:
-                                    self.marketing.show_consultation_cta("high_profit")
-                                else:
+                                # 손익 기반 알림 생성
+                                try:
+                                    if profit_rate < -15:
+                                        add_unified_alert(
+                                            alert_type="리스크 경고",
+                                            title=f"{portfolio_info['ticker']} 큰 손실",
+                                            message=f"{portfolio_info['ticker']}에서 {profit_rate:.1f}% 손실이 발생했습니다.",
+                                            ticker=portfolio_info['ticker']
+                                        )
+                                        self.marketing.show_consultation_cta("high_loss")
+                                    elif profit_rate > 25:
+                                        add_unified_alert(
+                                            alert_type="투자 기회",
+                                            title=f"{portfolio_info['ticker']} 목표 수익",
+                                            message=f"{portfolio_info['ticker']}에서 {profit_rate:.1f}% 수익을 달성했습니다.",
+                                            ticker=portfolio_info['ticker']
+                                        )
+                                        self.marketing.show_consultation_cta("high_profit")
+                                    else:
+                                        self.marketing.show_consultation_cta("general")
+                                except:
                                     self.marketing.show_consultation_cta("general")
                     except:
                         self.marketing.show_consultation_cta("general")
@@ -1409,6 +1528,17 @@ class IntegratedInvestmentAdvisor:
                 st.markdown('<div class="error-message">', unsafe_allow_html=True)
                 st.markdown(f"🚨 **분석 중 오류 발생**\n\n{str(e)}")
                 st.markdown('</div>', unsafe_allow_html=True)
+                
+                # 오류 알림 생성
+                try:
+                    add_unified_alert(
+                        alert_type="리스크 경고",
+                        title="AI 분석 오류",
+                        message=f"AI 분석 중 오류가 발생했습니다: {str(e)[:50]}...",
+                        ticker=None
+                    )
+                except:
+                    pass
                 
                 # 문제 해결 가이드
                 st.markdown("### 🔧 문제 해결 방법")
@@ -1452,6 +1582,7 @@ class IntegratedInvestmentAdvisor:
                     <li>투자 결정은 <strong>본인의 판단과 책임</strong>하에 이루어져야 합니다.</li>
                     <li>중요한 투자 결정 전에는 <strong>전문가 상담</strong>을 받으시기 바랍니다.</li>
                     <li>AI 분석 결과의 <strong>정확성을 보장하지 않으며</strong>, 시장 상황에 따라 예측이 빗나갈 수 있습니다.</li>
+                    <li>실시간 알림 시스템은 <strong>참고용</strong>이며, 투자 결정의 유일한 근거로 사용하지 마세요.</li>
                 </ul>
                 <p style="margin-top: 1rem;"><strong>📞 투자 상담:</strong> 미래에셋증권 고객센터 1588-6666</p>
             </div>
@@ -1468,7 +1599,7 @@ class IntegratedInvestmentAdvisor:
                 💻 Created by <span style="color: #667eea; font-size: 1.2rem; font-weight: bold;">Rin.C</span>
             </p>
             <div style="font-size: 0.8rem; color: #6c757d; margin-top: 1rem;">
-                🤖 HyperCLOVA X • 📊 Real-time Market Data • 🔴 Live Analysis • 🚀 All Features Active
+                🤖 HyperCLOVA X • 📊 Real-time Market Data • 🔴 Live Analysis • 🔔 Unified Alert System • 🚀 All Features Active
             </div>
         </div>
         """, unsafe_allow_html=True)
