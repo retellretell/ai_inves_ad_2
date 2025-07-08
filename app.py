@@ -1,6 +1,6 @@
 """
-app.py - 수정된 메인 애플리케이션
-HyperCLOVA X 기반 AI 투자 어드바이저 + 통합 실시간 알림 시스템
+app.py - 통합 CTA 시스템 적용 메인 애플리케이션
+HyperCLOVA X 기반 AI 투자 어드바이저 + 통합 실시간 알림 시스템 + 통합 CTA 마케팅
 """
 
 import streamlit as st
@@ -28,6 +28,18 @@ from unified_realtime_alerts import (
     UnifiedRealtimeAlertSystem,
     AlertType,
     AlertPriority
+)
+
+# 통합 CTA 마케팅 시스템 import
+from integrated_cta_system import (
+    IntegratedCTAManager,
+    init_integrated_cta_system,
+    show_comprehensive_cta_experience,
+    show_risk_based_cta,
+    track_user_journey,
+    display_integrated_cta_dashboard,
+    run_integrated_cta_system,
+    initialize_session_tracking
 )
 
 # 로깅 설정
@@ -161,21 +173,23 @@ def load_css():
         50% { opacity: 0.7; }
         100% { opacity: 1; }
     }
-    .cta-button {
+    .mega-cta {
         background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
         color: white;
-        padding: 1rem 2rem;
-        border-radius: 0.5rem;
+        padding: 2rem;
+        border-radius: 1rem;
         text-align: center;
-        font-size: 1.2rem;
-        font-weight: bold;
         margin: 1rem 0;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-    .cta-button:hover {
-        transform: translateY(-3px);
         box-shadow: 0 8px 25px rgba(255,107,53,0.3);
+        animation: glow 3s ease-in-out infinite alternate;
+    }
+    @keyframes glow {
+        from { box-shadow: 0 8px 25px rgba(255,107,53,0.3); }
+        to { box-shadow: 0 12px 35px rgba(255,107,53,0.5); }
+    }
+    @keyframes blink {
+        0%, 50% { opacity: 1; }
+        51%, 100% { opacity: 0.7; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -307,6 +321,40 @@ def parse_portfolio(question):
     
     return portfolio_info
 
+def calculate_portfolio_performance(portfolio_info):
+    """포트폴리오 성과 계산"""
+    if not portfolio_info or not portfolio_info.get('ticker'):
+        return None
+    
+    try:
+        stock = yf.Ticker(portfolio_info['ticker'])
+        current_data = stock.history(period="1d")
+        
+        if current_data.empty:
+            return None
+        
+        current_price = current_data['Close'].iloc[-1]
+        buy_price = portfolio_info.get('buy_price', current_price)
+        shares = portfolio_info.get('shares', 1)
+        
+        profit_rate = ((current_price - buy_price) / buy_price) * 100
+        profit_amount = (current_price - buy_price) * shares
+        current_value = current_price * shares
+        invested_amount = buy_price * shares
+        
+        return {
+            'current_price': current_price,
+            'buy_price': buy_price,
+            'profit_rate': profit_rate,
+            'profit_amount': profit_amount,
+            'current_value': current_value,
+            'invested_amount': invested_amount,
+            'shares': shares
+        }
+    except Exception as e:
+        logger.error(f"포트폴리오 성과 계산 오류: {e}")
+        return None
+
 # AI 클라이언트 클래스
 class HyperCLOVAXClient:
     def __init__(self):
@@ -437,6 +485,9 @@ class HyperCLOVAXClient:
 class AdvancedFeatures:
     """고급 투자자 기능"""
     
+    def __init__(self):
+        self.cta_manager = init_integrated_cta_system()
+    
     def render_portfolio_analyzer(self):
         """포트폴리오 분석기"""
         st.markdown("### 📊 포트폴리오 분석")
@@ -486,6 +537,7 @@ class AdvancedFeatures:
             
             total_invested = 0
             total_current = 0
+            portfolio_performance = []
             
             for i, holding in enumerate(st.session_state.portfolio):
                 col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 1, 1, 1])
@@ -509,6 +561,12 @@ class AdvancedFeatures:
                     
                     total_invested += invested_amount
                     total_current += current_value
+                    
+                    portfolio_performance.append({
+                        'ticker': holding['ticker'],
+                        'current_value': current_value,
+                        'profit_rate': profit_rate
+                    })
                     
                     with col4:
                         st.write(f"현재: {current_price:,.0f}원")
@@ -561,6 +619,419 @@ class AdvancedFeatures:
                     st.metric("총 손익", f"{total_profit:,.0f}원")
                 with col4:
                     st.metric("수익률", f"{total_return_pct:+.2f}%")
+                
+                # 포트폴리오 정보 추출
+            portfolio_info = parse_portfolio(st.session_state.user_question)
+            
+            # 포트폴리오 정보 표시
+            if portfolio_info:
+                st.markdown("### 👤 감지된 포트폴리오 정보")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if portfolio_info.get('stock'):
+                        st.metric("종목", portfolio_info['stock'])
+                
+                with col2:
+                    if portfolio_info.get('buy_price'):
+                        st.metric("매수가", f"{portfolio_info['buy_price']:,.0f}원")
+                
+                with col3:
+                   if portfolio_info.get('shares'):
+                       st.metric("보유 수량", f"{portfolio_info['shares']}주")
+            
+            # 진행률 표시
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            steps = [
+                ("🔍 질문 분석 중...", 0.2),
+                ("📊 실시간 시장 데이터 수집...", 0.4),
+                ("📰 최신 뉴스 분석...", 0.6),
+                ("🤖 AI 분석 실행...", 0.8),
+                ("✅ 분석 완료!", 1.0)
+            ]
+            
+            for step, progress in steps:
+                status_text.text(step)
+                progress_bar.progress(progress)
+                time.sleep(0.5)
+            
+            try:
+                # AI 분석 수행
+                with st.spinner("🤖 HyperCLOVA X가 실시간 분석 중입니다..."):
+                    response = self.ai_client.get_real_time_analysis(
+                        st.session_state.user_question,
+                        market_data,
+                        news_data
+                    )
+                
+                # 진행률 제거
+                progress_bar.empty()
+                status_text.empty()
+                
+                # 응답 표시
+                st.markdown('<div class="ai-response">', unsafe_allow_html=True)
+                st.markdown(response)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # 분석 완료 알림 생성
+                try:
+                    add_unified_alert(
+                        alert_type="투자 기회",
+                        title="AI 분석 완료",
+                        message=f"'{st.session_state.user_question[:30]}...' 질문에 대한 AI 분석이 완료되었습니다.",
+                        ticker=portfolio_info.get('ticker') if portfolio_info else None
+                    )
+                except:
+                    pass
+                
+                # 분석 요약
+                st.markdown(f"""
+                <div style="background: #e8f5e8; padding: 0.5rem; border-radius: 0.3rem; margin: 0.5rem 0;">
+                    📊 분석 완료: {datetime.now().strftime('%Y년 %m월 %d일 %H시 %M분 %S초')}<br>
+                    🔄 데이터 소스: 실시간 시장 + 최신 뉴스 + AI 분석<br>
+                    🤖 AI 엔진: HyperCLOVA X (네이버 클라우드 플랫폼)
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # 차트 표시 (포트폴리오 종목이 있는 경우)
+                if portfolio_info and portfolio_info.get('ticker'):
+                    st.markdown("### 📈 종목 차트")
+                    try:
+                        stock = yf.Ticker(portfolio_info['ticker'])
+                        stock_data = stock.history(period="6mo")
+                        
+                        if not stock_data.empty:
+                            fig = go.Figure(data=go.Candlestick(
+                                x=stock_data.index,
+                                open=stock_data['Open'],
+                                high=stock_data['High'],
+                                low=stock_data['Low'],
+                                close=stock_data['Close'],
+                                name=portfolio_info['ticker']
+                            ))
+                            
+                            fig.update_layout(
+                                title=f"{portfolio_info['ticker']} 주가 차트 (6개월)",
+                                yaxis_title="Price",
+                                xaxis_title="Date",
+                                template="plotly_white",
+                                height=500
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                    except Exception as e:
+                        st.warning(f"차트를 불러올 수 없습니다: {str(e)}")
+                
+                # 포트폴리오 성과 계산 및 맞춤 CTA 표시
+                if portfolio_info:
+                    performance = calculate_portfolio_performance(portfolio_info)
+                    if performance:
+                        try:
+                            # 손익 기반 알림 생성
+                            profit_rate = performance['profit_rate']
+                            if profit_rate < -15:
+                                add_unified_alert(
+                                    alert_type="리스크 경고",
+                                    title=f"{portfolio_info['ticker']} 큰 손실",
+                                    message=f"{portfolio_info['ticker']}에서 {profit_rate:.1f}% 손실이 발생했습니다.",
+                                    ticker=portfolio_info['ticker']
+                                )
+                            elif profit_rate > 25:
+                                add_unified_alert(
+                                    alert_type="투자 기회",
+                                    title=f"{portfolio_info['ticker']} 목표 수익",
+                                    message=f"{portfolio_info['ticker']}에서 {profit_rate:.1f}% 수익을 달성했습니다.",
+                                    ticker=portfolio_info['ticker']
+                                )
+                            
+                            # 성과 기반 맞춤 CTA 표시
+                            user_profile = {
+                                'risk_level': 'HIGH' if profit_rate < -15 else 'LOW' if profit_rate > 25 else 'MEDIUM',
+                                'investment_amount': self._estimate_investment_amount(performance['invested_amount']),
+                                'portfolio_info': performance,
+                                'session_id': st.session_state.session_id,
+                                'page_context': 'ai_analysis'
+                            }
+                            
+                            show_comprehensive_cta_experience(user_profile, performance, "ai_analysis")
+                            
+                        except Exception as e:
+                            logger.warning(f"맞춤 CTA 표시 실패: {e}")
+                            self._show_basic_cta()
+                else:
+                    # 기본 CTA 표시
+                    user_profile = {
+                        'session_id': st.session_state.session_id,
+                        'page_context': 'ai_analysis'
+                    }
+                    show_comprehensive_cta_experience(user_profile, None, "ai_analysis")
+                
+                # 사용자 여정 추적
+                track_user_journey("ai_analysis_completed", {
+                    "question": st.session_state.user_question,
+                    "portfolio_detected": bool(portfolio_info)
+                })
+                
+            except Exception as e:
+                progress_bar.empty()
+                status_text.empty()
+                
+                st.markdown('<div class="error-message">', unsafe_allow_html=True)
+                st.markdown(f"🚨 **분석 중 오류 발생**\n\n{str(e)}")
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # 오류 알림 생성
+                try:
+                    add_unified_alert(
+                        alert_type="리스크 경고",
+                        title="AI 분석 오류",
+                        message=f"AI 분석 중 오류가 발생했습니다: {str(e)[:50]}...",
+                        ticker=None
+                    )
+                except:
+                    pass
+                
+                # 문제 해결 가이드
+                st.markdown("### 🔧 문제 해결 방법")
+                st.markdown("""
+                1. **API 키 확인**: 사이드바에서 API 연결 상태 확인
+                2. **네트워크 확인**: 인터넷 연결 상태 확인
+                3. **질문 단순화**: 더 간단한 질문으로 재시도
+                4. **페이지 새로고침**: 브라우저 새로고침 후 재시도
+                """)
+                
+                # 오류 시에도 기본 CTA 표시
+                self._show_basic_cta()
+        
+        # 샘플 질문
+        if not st.session_state.user_question:
+            st.markdown("### 💡 샘플 질문")
+            
+            sample_questions = [
+                "삼성전자 65,000원에 150주 보유 중, 지금 매도해야 할까요?",
+                "오늘 시장 상황 어떤가요? 매수하기 좋은 타이밍인가요?",
+                "반도체 섹터 전망은 어떤가요?",
+                "현재 가장 주목해야 할 투자 테마는?",
+                "달러 환율이 계속 오르는데 어떻게 대응해야 할까요?",
+                "AI 관련주 투자 전략 알려주세요"
+            ]
+            
+            cols = st.columns(2)
+            for i, question in enumerate(sample_questions):
+                with cols[i % 2]:
+                    if st.button(question, key=f"sample_{i}"):
+                        st.session_state.selected_question = question
+                        track_user_journey("sample_question_selected", {"question": question})
+                        st.rerun()
+    
+    def _render_cta_marketing_content(self):
+        """통합 CTA 마케팅 콘텐츠 렌더링"""
+        st.markdown("### 🎯 마케팅 CTA 시스템")
+        
+        # 관리자 모드 확인
+        admin_mode = st.secrets.get("ADMIN_MODE", False)
+        
+        if admin_mode:
+            # 관리자 대시보드
+            display_integrated_cta_dashboard()
+            st.markdown("---")
+        
+        # CTA 테스트 섹션
+        st.markdown("#### 🧪 CTA 시스템 테스트")
+        
+        # 테스트 시나리오 선택
+        test_scenario = st.selectbox(
+            "테스트 시나리오 선택",
+            [
+                "신규 사용자 (기본)",
+                "고위험 포트폴리오 고객",
+                "고수익 달성 고객", 
+                "VIP 고객",
+                "손실 우려 고객"
+            ]
+        )
+        
+        # 시나리오별 테스트 데이터
+        test_profiles = {
+            "신규 사용자 (기본)": {
+                'grade': 'BASIC',
+                'risk_level': 'MEDIUM',
+                'investment_amount': '1천만원 미만'
+            },
+            "고위험 포트폴리오 고객": {
+                'grade': 'STANDARD',
+                'risk_level': 'HIGH',
+                'investment_amount': '5천만원-1억원',
+                'portfolio_info': {'current_value': 50000000, 'profit_rate': -18.5}
+            },
+            "고수익 달성 고객": {
+                'grade': 'PREMIUM',
+                'risk_level': 'LOW',
+                'investment_amount': '1억원-5억원',
+                'portfolio_info': {'current_value': 150000000, 'profit_rate': 28.3}
+            },
+            "VIP 고객": {
+                'grade': 'VIP',
+                'risk_level': 'MEDIUM',
+                'investment_amount': '5억원 이상',
+                'portfolio_info': {'current_value': 800000000, 'profit_rate': 15.2}
+            },
+            "손실 우려 고객": {
+                'grade': 'STANDARD',
+                'risk_level': 'HIGH',
+                'investment_amount': '1천-5천만원',
+                'portfolio_info': {'current_value': 25000000, 'profit_rate': -25.8}
+            }
+        }
+        
+        selected_profile = test_profiles[test_scenario]
+        
+        st.markdown(f"**선택된 시나리오:** {test_scenario}")
+        
+        with st.expander("시나리오 상세 정보", expanded=False):
+            st.json(selected_profile)
+        
+        # 테스트 실행
+        if st.button("🚀 CTA 테스트 실행", type="primary"):
+            st.markdown("---")
+            st.markdown(f"### 📋 {test_scenario} CTA 미리보기")
+            
+            try:
+                # 통합 CTA 시스템 실행
+                user_profile = selected_profile.copy()
+                user_profile['session_id'] = st.session_state.session_id
+                user_profile['page_context'] = 'cta_test'
+                
+                show_comprehensive_cta_experience(
+                    user_profile=user_profile,
+                    portfolio_info=selected_profile.get('portfolio_info'),
+                    page_context="cta_test"
+                )
+                
+                # 테스트 추적
+                track_user_journey("cta_test_executed", {"scenario": test_scenario})
+                
+            except Exception as e:
+                st.error(f"CTA 테스트 실행 중 오류: {e}")
+                # 기본 CTA 표시
+                self._show_basic_cta()
+        
+        # CTA 성과 요약 (관리자가 아닌 경우에도 기본 정보 표시)
+        if not admin_mode:
+            st.markdown("#### 📊 CTA 성과 요약")
+            try:
+                basic_metrics = self.cta_manager.get_dashboard_metrics()
+                conversion_rate = basic_metrics.get('conversion_metrics', {}).get('conversion_rate', 0)
+                active_leads = basic_metrics.get('active_leads', 0)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("현재 전환율", f"{conversion_rate}%")
+                with col2:
+                    st.metric("활성 리드", f"{active_leads}개")
+                    
+            except Exception as e:
+                st.info("CTA 성과 데이터를 불러오는 중입니다...")
+    
+    def _estimate_investment_amount(self, invested_amount: float) -> str:
+        """투자 금액을 카테고리로 변환"""
+        if invested_amount >= 500000000:  # 5억 이상
+            return '5억원 이상'
+        elif invested_amount >= 100000000:  # 1억 이상
+            return '1억원-5억원'
+        elif invested_amount >= 50000000:  # 5천만원 이상
+            return '5천만원-1억원'
+        elif invested_amount >= 10000000:  # 1천만원 이상
+            return '1천-5천만원'
+        else:
+            return '1천만원 미만'
+    
+    def _show_basic_cta(self):
+        """기본 CTA 표시 (통합 시스템 오류 시 대비)"""
+        st.markdown("""
+        <div class="mega-cta">
+            <h3 style="margin: 0 0 0.5rem 0;">📞 1:1 투자 상담</h3>
+            <p style="margin: 0 0 1rem 0; font-size: 1.1rem;">AI 분석과 함께 전문가 상담으로 완벽한 투자전략을 세워보세요.</p>
+            <p style="margin: 0; font-size: 0.9rem; opacity: 0.9;">
+                ✅ 무료 상담 ✅ 개인별 맞춤 전략 ✅ 실시간 포트폴리오 분석
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🎯 전문가 상담 신청하기", type="primary", use_container_width=True, key="basic_cta"):
+                st.success("상담 신청이 접수되었습니다! 24시간 내 연락드리겠습니다.")
+                st.info("📞 즉시 상담: 1588-6666")
+    
+    def _show_disclaimer(self):
+        """면책조항"""
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border: 2px solid #ff6b35; border-radius: 0.8rem; padding: 1.5rem; margin: 1rem 0;">
+            <h4 style="color: #d63031; margin: 0 0 1rem 0;">⚠️ 투자 위험 고지 및 면책사항</h4>
+            <div style="color: #2d3436; font-size: 0.9rem; line-height: 1.6;">
+                <p><strong>🚨 중요한 투자 위험 안내</strong></p>
+                <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                    <li>본 AI 분석은 <strong>정보 제공 목적</strong>이며, 투자 권유나 매매 신호가 아닙니다.</li>
+                    <li>모든 투자에는 <strong>원금 손실 위험</strong>이 있으며, 과거 성과가 미래 수익을 보장하지 않습니다.</li>
+                    <li>투자 결정은 <strong>본인의 판단과 책임</strong>하에 이루어져야 합니다.</li>
+                    <li>중요한 투자 결정 전에는 <strong>전문가 상담</strong>을 받으시기 바랍니다.</li>
+                    <li>AI 분석 결과의 <strong>정확성을 보장하지 않으며</strong>, 시장 상황에 따라 예측이 빗나갈 수 있습니다.</li>
+                    <li>실시간 알림 시스템과 CTA는 <strong>참고용</strong>이며, 투자 결정의 유일한 근거로 사용하지 마세요.</li>
+                </ul>
+                <p style="margin-top: 1rem;"><strong>📞 투자 상담:</strong> 미래에셋증권 고객센터 1588-6666</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    def _render_creator_info(self):
+        """만든이 정보 렌더링"""
+        st.markdown("---")
+        st.markdown("""
+        <div style="text-align: center; padding: 2rem; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 1rem; margin: 2rem 0;">
+            <p style="margin: 0; font-size: 1rem; color: #495057;">🏆 <strong>AI Festival 2025</strong> 출품작</p>
+            <p style="margin: 1rem 0; font-size: 1.4rem;">
+                💻 Created by <span style="color: #667eea; font-size: 1.2rem; font-weight: bold;">Rin.C</span>
+            </p>
+            <div style="font-size: 0.8rem; color: #6c757d; margin-top: 1rem;">
+                🤖 HyperCLOVA X • 📊 Real-time Market Data • 🔴 Live Analysis • 🔔 Unified Alert System • 🎯 Integrated CTA Marketing • 🚀 All Features Active
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+def main():
+    """메인 함수"""
+    try:
+        # 통합 투자 어드바이저 실행
+        app = IntegratedInvestmentAdvisor()
+        app.run()
+        
+    except Exception as e:
+        logger.critical(f"치명적 오류 발생: {str(e)}")
+        st.error("🚨 시스템에 치명적인 오류가 발생했습니다.")
+        
+        st.markdown("### 🔧 문제 해결 방법")
+        st.markdown("""
+        1. **페이지 새로고침**: F5 키를 눌러 페이지를 새로고침하세요
+        2. **브라우저 캐시 삭제**: Ctrl+Shift+Delete로 캐시를 삭제하세요
+        3. **다른 브라우저 시도**: Chrome, Firefox, Edge 등 다른 브라우저로 접속해보세요
+        4. **인터넷 연결 확인**: 네트워크 연결 상태를 확인하세요
+        5. **잠시 후 재시도**: 서버가 일시적으로 과부하일 수 있습니다
+        """)
+
+if __name__ == "__main__":
+    main()
+폴리오 상태 기반 통합 CTA 표시
+                portfolio_info = {
+                    'current_value': total_current,
+                    'profit_rate': total_return_pct,
+                    'total_profit': total_profit
+                }
+                
+                # 포트폴리오 성과 기반 맞춤 CTA
+                show_risk_based_cta(portfolio_info)
                 
                 # 포트폴리오 상태 기반 자동 알림
                 try:
@@ -686,6 +1157,9 @@ class AdvancedFeatures:
 class BacktestingEngine:
     """백테스팅 시스템"""
     
+    def __init__(self):
+        self.cta_manager = init_integrated_cta_system()
+    
     def render_backtesting(self):
         """백테스팅 인터페이스"""
         st.markdown("### 📊 전략 백테스팅")
@@ -753,6 +1227,14 @@ class BacktestingEngine:
                                 )
                         except:
                             pass
+                        
+                        # 백테스트 결과 기반 맞춤 CTA
+                        backtest_info = {
+                            'profit_rate': results['total_return'],
+                            'num_trades': results['num_trades'],
+                            'final_value': results['final_value']
+                        }
+                        show_risk_based_cta(backtest_info)
                         
                 except Exception as e:
                     st.error(f"백테스트 오류: {e}")
@@ -865,169 +1347,6 @@ class BacktestingEngine:
             if not trades_df.empty:
                 st.dataframe(trades_df)
 
-class MarketingCTA:
-    """마케팅 CTA 시스템"""
-    
-    def show_consultation_cta(self, context="general"):
-        """상담 신청 CTA"""
-        st.markdown("---")
-        
-        # 컨텍스트별 메시지
-        if context == "high_loss":
-            title = "🚨 전문가 긴급 상담"
-            message = "큰 손실이 예상됩니다. 전문가와 즉시 상담하세요."
-            bg_color = "linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)"
-        elif context == "high_profit":
-            title = "💰 수익 최적화 상담"
-            message = "수익을 더욱 늘릴 수 있는 전략을 제안받으세요."
-            bg_color = "linear-gradient(135deg, #4CAF50 0%, #45a049 100%)"
-        else:
-            title = "📞 1:1 투자 상담"
-            message = "AI 분석과 함께 전문가 상담으로 완벽한 투자전략을 세워보세요."
-            bg_color = "linear-gradient(135deg, #74b9ff 0%, #0984e3 100%)"
-        
-        st.markdown(f"""
-        <div style="background: {bg_color}; color: white; padding: 2rem; border-radius: 1rem; 
-                    margin: 1rem 0; text-align: center;">
-            <h3 style="margin: 0 0 0.5rem 0;">{title}</h3>
-            <p style="margin: 0 0 1rem 0; font-size: 1.1rem;">{message}</p>
-            <p style="margin: 0; font-size: 0.9rem; opacity: 0.9;">
-                ✅ 무료 상담 ✅ 개인별 맞춤 전략 ✅ 실시간 포트폴리오 분석
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        
-        with col2:
-            if st.button("🎯 전문가 상담 신청하기", type="primary", use_container_width=True):
-                self._show_lead_form()
-    
-    def _show_lead_form(self):
-        """리드 수집 폼"""
-        with st.form("consultation_form"):
-            st.markdown("### 📋 전문가 상담 신청")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                name = st.text_input("이름 *", placeholder="홍길동")
-                phone = st.text_input("연락처 *", placeholder="010-1234-5678")
-                
-            with col2:
-                email = st.text_input("이메일", placeholder="hong@example.com")
-                contact_time = st.selectbox("상담 희망 시간", 
-                                          ["평일 오전", "평일 오후", "평일 저녁", "주말"])
-            
-            investment_experience = st.selectbox(
-                "투자 경험",
-                ["초보 (1년 미만)", "초급 (1-3년)", "중급 (3-5년)", "고급 (5년 이상)"]
-            )
-            
-            investment_amount = st.selectbox(
-                "투자 예정 금액",
-                ["1천만원 미만", "1천만원-5천만원", "5천만원-1억원", "1억원 이상"]
-            )
-            
-            consultation_topic = st.multiselect(
-                "상담 주제",
-                ["포트폴리오 분석", "리스크 관리", "세금 절약", "은퇴 계획", "해외 투자"]
-            )
-            
-            additional_info = st.text_area(
-                "추가 문의사항",
-                placeholder="상담받고 싶은 구체적인 내용을 적어주세요...",
-                height=100
-            )
-            
-            privacy_agreed = st.checkbox("개인정보 수집 및 이용에 동의합니다.")
-            
-            if st.form_submit_button("상담 신청하기", type="primary", use_container_width=True):
-                if not name or not phone:
-                    st.error("이름과 연락처는 필수 입력 사항입니다.")
-                elif not privacy_agreed:
-                    st.error("개인정보 수집 및 이용에 동의해주세요.")
-                else:
-                    # 상담 신청 데이터 저장 (실제로는 DB에 저장)
-                    consultation_data = {
-                        'name': name,
-                        'phone': phone,
-                        'email': email,
-                        'contact_time': contact_time,
-                        'investment_experience': investment_experience,
-                        'investment_amount': investment_amount,
-                        'consultation_topic': consultation_topic,
-                        'additional_info': additional_info,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    
-                    # 상담 신청 완료 알림
-                    try:
-                        add_unified_alert(
-                            alert_type="투자 기회",
-                            title="전문가 상담 신청 완료",
-                            message=f"{name}님의 상담 신청이 완료되었습니다. 24시간 내 연락드리겠습니다.",
-                            ticker=None
-                        )
-                    except:
-                        pass
-                    
-                    st.success("✅ 상담 신청이 완료되었습니다!")
-                    st.info("📞 영업일 기준 24시간 내에 연락드리겠습니다.")
-                    
-                    # 다음 단계 안내
-                    st.markdown("""
-                    ### 🎯 다음 단계
-                    
-                    **1. 상담 준비**
-                    - 현재 보유 종목 리스트
-                    - 투자 목표와 기간
-                    - 위험 허용 수준
-                    
-                    **2. 즉시 연락을 원하시나요?**
-                    📞 고객센터: 1588-6666 (평일 9:00-18:00)
-                    💬 카카오톡: '미래에셋증권' 검색
-                    """)
-    
-    def show_product_recommendations(self, portfolio_info=None):
-        """상품 추천"""
-        st.markdown("### 🎯 맞춤 투자 상품 추천")
-        
-        # 간단한 추천 로직
-        if portfolio_info:
-            profit_rate = portfolio_info.get('profit_rate', 0)
-            if profit_rate < -10:
-                recommendation = "안전형 포트폴리오"
-                description = "원금 보전을 최우선으로 하는 안정적 투자"
-                products = "정기예금, 국고채, 안전형 펀드"
-            elif profit_rate > 20:
-                recommendation = "성장형 포트폴리오"
-                description = "높은 수익을 목표로 하는 적극적 투자"
-                products = "성장주, 테마주, 해외주식"
-            else:
-                recommendation = "균형형 포트폴리오"
-                description = "안정성과 수익성의 균형을 추구"
-                products = "혼합형 펀드, ETF, 우량주"
-        else:
-            recommendation = "균형형 포트폴리오"
-            description = "안정성과 수익성의 균형을 추구"
-            products = "혼합형 펀드, ETF, 우량주"
-        
-        st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); 
-                    padding: 1.5rem; border-radius: 1rem; margin: 1rem 0;">
-            <h4 style="margin: 0 0 0.5rem 0; color: #2d3436;">
-                🏆 {recommendation}
-            </h4>
-            <p style="margin: 0 0 1rem 0; color: #636e72;">
-                {description}
-            </p>
-            <div>
-                <strong>추천 상품:</strong> {products}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
 # 메인 애플리케이션 클래스
 class IntegratedInvestmentAdvisor:
     """통합된 투자 어드바이저"""
@@ -1037,10 +1356,12 @@ class IntegratedInvestmentAdvisor:
         self.ai_client = HyperCLOVAXClient()
         self.advanced_features = AdvancedFeatures()
         self.backtesting = BacktestingEngine()
-        self.marketing = MarketingCTA()
         
         # 통합 알림 시스템 초기화
         self.alert_system = init_unified_alert_system()
+        
+        # 통합 CTA 시스템 초기화
+        self.cta_manager = init_integrated_cta_system()
         
     def _init_session(self) -> str:
         """세션 초기화"""
@@ -1055,6 +1376,9 @@ class IntegratedInvestmentAdvisor:
             
         if 'selected_question' not in st.session_state:
             st.session_state.selected_question = ""
+        
+        # 통합 CTA 세션 추적 초기화
+        initialize_session_tracking()
         
         return st.session_state.session_id
     
@@ -1091,11 +1415,12 @@ class IntegratedInvestmentAdvisor:
         # 사이드바 렌더링
         self._render_sidebar(market_data)
         
-        # 메인 탭 구성 - 통합 알림 시스템 포함
+        # 메인 탭 구성 - 통합 CTA 시스템 포함
         main_tabs = st.tabs([
             "🏠 홈", 
             "🤖 AI 분석", 
             "🔔 통합 알림 센터", 
+            "🎯 마케팅 CTA",
             "🚀 고급 기능", 
             "📊 백테스팅",
             "📈 기술적 분석"
@@ -1113,12 +1438,16 @@ class IntegratedInvestmentAdvisor:
             integrate_unified_realtime_alerts()
         
         with main_tabs[3]:
-            self.advanced_features.render_portfolio_analyzer()
+            # 통합 CTA 마케팅 시스템
+            self._render_cta_marketing_content()
         
         with main_tabs[4]:
-            self.backtesting.render_backtesting()
+            self.advanced_features.render_portfolio_analyzer()
         
         with main_tabs[5]:
+            self.backtesting.render_backtesting()
+        
+        with main_tabs[6]:
             self.advanced_features.render_technical_analysis()
         
         # 면책조항
@@ -1131,17 +1460,23 @@ class IntegratedInvestmentAdvisor:
         """헤더 렌더링"""
         st.markdown('<div class="main-header">🤖 HyperCLOVA X AI 투자 어드바이저</div>', unsafe_allow_html=True)
         
-        # 알림 개수 표시
+        # 알림 개수 및 CTA 상태 표시
         try:
             alert_stats = self.alert_system.get_alert_statistics()
             unread_count = alert_stats.get('unread', 0)
             alert_badge = f" 🔔 {unread_count}개 알림" if unread_count > 0 else ""
+            
+            # CTA 성과 간단 표시
+            cta_metrics = self.cta_manager.get_dashboard_metrics()
+            conversion_rate = cta_metrics.get('conversion_metrics', {}).get('conversion_rate', 0)
+            cta_badge = f" 🎯 전환율 {conversion_rate}%" if conversion_rate > 0 else ""
         except:
             alert_badge = ""
+            cta_badge = ""
         
         st.markdown(f"""
         <p style="text-align: center; color: #666; font-size: 1.1rem;">
-            🔴 실시간 분석 • 📊 Live Market Data • 🚀 모든 기능 활성화{alert_badge}
+            🔴 실시간 분석 • 📊 Live Market Data • 🎯 통합 CTA 시스템 • 🚀 모든 기능 활성화{alert_badge}{cta_badge}
         </p>
         <p style="text-align: center; color: #999; font-size: 0.9rem;">
             📅 {current_time.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")}
@@ -1171,6 +1506,17 @@ class IntegratedInvestmentAdvisor:
                     st.markdown(f'<div class="status-good">✅ 알림 시스템 활성화</div>', unsafe_allow_html=True)
             except:
                 st.markdown('<div class="status-good">✅ 알림 시스템 준비</div>', unsafe_allow_html=True)
+            
+            # CTA 시스템 상태
+            try:
+                cta_metrics = self.cta_manager.get_dashboard_metrics()
+                active_leads = cta_metrics.get('active_leads', 0)
+                if active_leads > 0:
+                    st.markdown(f'<div class="status-good">🎯 활성 리드 {active_leads}개</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="status-good">🎯 CTA 시스템 활성화</div>', unsafe_allow_html=True)
+            except:
+                st.markdown('<div class="status-good">🎯 CTA 시스템 준비</div>', unsafe_allow_html=True)
             
             st.markdown("---")
             
@@ -1215,6 +1561,8 @@ class IntegratedInvestmentAdvisor:
             for question in popular_questions:
                 if st.button(question, key=f"sidebar_{question}", use_container_width=True):
                     st.session_state.selected_question = question
+                    # 사용자 여정 추적
+                    track_user_journey("question_selected", {"question": question})
                     st.rerun()
             
             st.markdown("---")
@@ -1243,7 +1591,7 @@ class IntegratedInvestmentAdvisor:
         # 기능 소개 카드
         st.markdown("#### 🌟 주요 기능")
         
-        feature_cols = st.columns(4)
+        feature_cols = st.columns(5)
         
         features = [
             {
@@ -1255,6 +1603,11 @@ class IntegratedInvestmentAdvisor:
                 "icon": "🔔",
                 "title": "통합 알림 센터",
                 "desc": "24/7 포트폴리오 모니터링"
+            },
+            {
+                "icon": "🎯",
+                "title": "통합 CTA 시스템",
+                "desc": "개인화된 투자 상담 및 추천"
             },
             {
                 "icon": "📊",
@@ -1328,8 +1681,17 @@ class IntegratedInvestmentAdvisor:
         except:
             pass
         
-        # 마케팅 CTA
-        self.marketing.show_consultation_cta()
+        # 홈 화면용 통합 CTA 표시
+        try:
+            user_profile = {
+                'session_id': st.session_state.session_id,
+                'page_context': 'home'
+            }
+            show_comprehensive_cta_experience(user_profile, None, "home")
+        except Exception as e:
+            logger.warning(f"CTA 표시 실패: {e}")
+            # 기본 CTA 표시
+            self._show_basic_cta()
     
     def _render_ai_analysis_content(self, market_data, news_data):
         """AI 분석 콘텐츠 렌더링"""
@@ -1377,252 +1739,7 @@ class IntegratedInvestmentAdvisor:
                 st.warning("💬 분석할 질문을 입력해주세요.")
                 return
             
-            # 포트폴리오 정보 추출
-            portfolio_info = parse_portfolio(st.session_state.user_question)
+            # 사용자 여정 추적
+            track_user_journey("ai_analysis_started", {"question": st.session_state.user_question})
             
-            # 포트폴리오 정보 표시
-            if portfolio_info:
-                st.markdown("### 👤 감지된 포트폴리오 정보")
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    if portfolio_info.get('stock'):
-                        st.metric("종목", portfolio_info['stock'])
-                
-                with col2:
-                    if portfolio_info.get('buy_price'):
-                        st.metric("매수가", f"{portfolio_info['buy_price']:,.0f}원")
-                
-                with col3:
-                   if portfolio_info.get('shares'):
-                       st.metric("보유 수량", f"{portfolio_info['shares']}주")
-            
-            # 진행률 표시
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            steps = [
-                ("🔍 질문 분석 중...", 0.2),
-                ("📊 실시간 시장 데이터 수집...", 0.4),
-                ("📰 최신 뉴스 분석...", 0.6),
-                ("🤖 AI 분석 실행...", 0.8),
-                ("✅ 분석 완료!", 1.0)
-            ]
-            
-            for step, progress in steps:
-                status_text.text(step)
-                progress_bar.progress(progress)
-                time.sleep(0.5)
-            
-            try:
-                # AI 분석 수행
-                with st.spinner("🤖 HyperCLOVA X가 실시간 분석 중입니다..."):
-                    response = self.ai_client.get_real_time_analysis(
-                        st.session_state.user_question,
-                        market_data,
-                        news_data
-                    )
-                
-                # 진행률 제거
-                progress_bar.empty()
-                status_text.empty()
-                
-                # 응답 표시
-                st.markdown('<div class="ai-response">', unsafe_allow_html=True)
-                st.markdown(response)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                # 분석 완료 알림 생성
-                try:
-                    add_unified_alert(
-                        alert_type="투자 기회",
-                        title="AI 분석 완료",
-                        message=f"'{st.session_state.user_question[:30]}...' 질문에 대한 AI 분석이 완료되었습니다.",
-                        ticker=portfolio_info.get('ticker') if portfolio_info else None
-                    )
-                except:
-                    pass
-                
-                # 분석 요약
-                st.markdown(f"""
-                <div style="background: #e8f5e8; padding: 0.5rem; border-radius: 0.3rem; margin: 0.5rem 0;">
-                    📊 분석 완료: {datetime.now().strftime('%Y년 %m월 %d일 %H시 %M분 %S초')}<br>
-                    🔄 데이터 소스: 실시간 시장 + 최신 뉴스 + AI 분석<br>
-                    🤖 AI 엔진: HyperCLOVA X (네이버 클라우드 플랫폼)
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # 차트 표시 (포트폴리오 종목이 있는 경우)
-                if portfolio_info and portfolio_info.get('ticker'):
-                    st.markdown("### 📈 종목 차트")
-                    try:
-                        stock = yf.Ticker(portfolio_info['ticker'])
-                        stock_data = stock.history(period="6mo")
-                        
-                        if not stock_data.empty:
-                            fig = go.Figure(data=go.Candlestick(
-                                x=stock_data.index,
-                                open=stock_data['Open'],
-                                high=stock_data['High'],
-                                low=stock_data['Low'],
-                                close=stock_data['Close'],
-                                name=portfolio_info['ticker']
-                            ))
-                            
-                            fig.update_layout(
-                                title=f"{portfolio_info['ticker']} 주가 차트 (6개월)",
-                                yaxis_title="Price",
-                                xaxis_title="Date",
-                                template="plotly_white",
-                                height=500
-                            )
-                            
-                            st.plotly_chart(fig, use_container_width=True)
-                    except Exception as e:
-                        st.warning(f"차트를 불러올 수 없습니다: {str(e)}")
-                
-                # 마케팅 CTA - 상황별 맞춤
-                if portfolio_info:
-                    # 수익률 계산
-                    try:
-                        if portfolio_info.get('ticker') and portfolio_info.get('buy_price'):
-                            current_data = yf.Ticker(portfolio_info['ticker']).history(period="1d")
-                            if not current_data.empty:
-                                current_price = current_data['Close'].iloc[-1]
-                                profit_rate = ((current_price - portfolio_info['buy_price']) / portfolio_info['buy_price']) * 100
-                                
-                                # 손익 기반 알림 생성
-                                try:
-                                    if profit_rate < -15:
-                                        add_unified_alert(
-                                            alert_type="리스크 경고",
-                                            title=f"{portfolio_info['ticker']} 큰 손실",
-                                            message=f"{portfolio_info['ticker']}에서 {profit_rate:.1f}% 손실이 발생했습니다.",
-                                            ticker=portfolio_info['ticker']
-                                        )
-                                        self.marketing.show_consultation_cta("high_loss")
-                                    elif profit_rate > 25:
-                                        add_unified_alert(
-                                            alert_type="투자 기회",
-                                            title=f"{portfolio_info['ticker']} 목표 수익",
-                                            message=f"{portfolio_info['ticker']}에서 {profit_rate:.1f}% 수익을 달성했습니다.",
-                                            ticker=portfolio_info['ticker']
-                                        )
-                                        self.marketing.show_consultation_cta("high_profit")
-                                    else:
-                                        self.marketing.show_consultation_cta("general")
-                                except:
-                                    self.marketing.show_consultation_cta("general")
-                    except:
-                        self.marketing.show_consultation_cta("general")
-                else:
-                    self.marketing.show_consultation_cta("general")
-                
-                # 상품 추천
-                self.marketing.show_product_recommendations(portfolio_info)
-                
-            except Exception as e:
-                progress_bar.empty()
-                status_text.empty()
-                
-                st.markdown('<div class="error-message">', unsafe_allow_html=True)
-                st.markdown(f"🚨 **분석 중 오류 발생**\n\n{str(e)}")
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                # 오류 알림 생성
-                try:
-                    add_unified_alert(
-                        alert_type="리스크 경고",
-                        title="AI 분석 오류",
-                        message=f"AI 분석 중 오류가 발생했습니다: {str(e)[:50]}...",
-                        ticker=None
-                    )
-                except:
-                    pass
-                
-                # 문제 해결 가이드
-                st.markdown("### 🔧 문제 해결 방법")
-                st.markdown("""
-                1. **API 키 확인**: 사이드바에서 API 연결 상태 확인
-                2. **네트워크 확인**: 인터넷 연결 상태 확인
-                3. **질문 단순화**: 더 간단한 질문으로 재시도
-                4. **페이지 새로고침**: 브라우저 새로고침 후 재시도
-                """)
-        
-        # 샘플 질문
-        if not st.session_state.user_question:
-            st.markdown("### 💡 샘플 질문")
-            
-            sample_questions = [
-                "삼성전자 65,000원에 150주 보유 중, 지금 매도해야 할까요?",
-                "오늘 시장 상황 어떤가요? 매수하기 좋은 타이밍인가요?",
-                "반도체 섹터 전망은 어떤가요?",
-                "현재 가장 주목해야 할 투자 테마는?",
-                "달러 환율이 계속 오르는데 어떻게 대응해야 할까요?",
-                "AI 관련주 투자 전략 알려주세요"
-            ]
-            
-            cols = st.columns(2)
-            for i, question in enumerate(sample_questions):
-                with cols[i % 2]:
-                    if st.button(question, key=f"sample_{i}"):
-                        st.session_state.selected_question = question
-                        st.rerun()
-    
-    def _show_disclaimer(self):
-        """면책조항"""
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border: 2px solid #ff6b35; border-radius: 0.8rem; padding: 1.5rem; margin: 1rem 0;">
-            <h4 style="color: #d63031; margin: 0 0 1rem 0;">⚠️ 투자 위험 고지 및 면책사항</h4>
-            <div style="color: #2d3436; font-size: 0.9rem; line-height: 1.6;">
-                <p><strong>🚨 중요한 투자 위험 안내</strong></p>
-                <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
-                    <li>본 AI 분석은 <strong>정보 제공 목적</strong>이며, 투자 권유나 매매 신호가 아닙니다.</li>
-                    <li>모든 투자에는 <strong>원금 손실 위험</strong>이 있으며, 과거 성과가 미래 수익을 보장하지 않습니다.</li>
-                    <li>투자 결정은 <strong>본인의 판단과 책임</strong>하에 이루어져야 합니다.</li>
-                    <li>중요한 투자 결정 전에는 <strong>전문가 상담</strong>을 받으시기 바랍니다.</li>
-                    <li>AI 분석 결과의 <strong>정확성을 보장하지 않으며</strong>, 시장 상황에 따라 예측이 빗나갈 수 있습니다.</li>
-                    <li>실시간 알림 시스템은 <strong>참고용</strong>이며, 투자 결정의 유일한 근거로 사용하지 마세요.</li>
-                </ul>
-                <p style="margin-top: 1rem;"><strong>📞 투자 상담:</strong> 미래에셋증권 고객센터 1588-6666</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    def _render_creator_info(self):
-        """만든이 정보 렌더링"""
-        st.markdown("---")
-        st.markdown("""
-        <div style="text-align: center; padding: 2rem; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 1rem; margin: 2rem 0;">
-            <p style="margin: 0; font-size: 1rem; color: #495057;">🏆 <strong>AI Festival 2025</strong> 출품작</p>
-            <p style="margin: 1rem 0; font-size: 1.4rem;">
-                💻 Created by <span style="color: #667eea; font-size: 1.2rem; font-weight: bold;">Rin.C</span>
-            </p>
-            <div style="font-size: 0.8rem; color: #6c757d; margin-top: 1rem;">
-                🤖 HyperCLOVA X • 📊 Real-time Market Data • 🔴 Live Analysis • 🔔 Unified Alert System • 🚀 All Features Active
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-def main():
-    """메인 함수"""
-    try:
-        # 통합 투자 어드바이저 실행
-        app = IntegratedInvestmentAdvisor()
-        app.run()
-        
-    except Exception as e:
-        logger.critical(f"치명적 오류 발생: {str(e)}")
-        st.error("🚨 시스템에 치명적인 오류가 발생했습니다.")
-        
-        st.markdown("### 🔧 문제 해결 방법")
-        st.markdown("""
-        1. **페이지 새로고침**: F5 키를 눌러 페이지를 새로고침하세요
-        2. **브라우저 캐시 삭제**: Ctrl+Shift+Delete로 캐시를 삭제하세요
-        3. **다른 브라우저 시도**: Chrome, Firefox, Edge 등 다른 브라우저로 접속해보세요
-        4. **인터넷 연결 확인**: 네트워크 연결 상태를 확인하세요
-        5. **잠시 후 재시도**: 서버가 일시적으로 과부하일 수 있습니다
-        """)
-
-if __name__ == "__main__":
-    main()
+            # 포트
